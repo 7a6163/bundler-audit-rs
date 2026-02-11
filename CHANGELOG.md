@@ -1,3 +1,24 @@
+### 1.1.0 / 2026-02-12
+
+#### Changed
+
+* Migrated from `git2` (libgit2 C bindings) to [gix] (gitoxide), a pure
+  Rust git implementation. This eliminates OpenSSL and libssh2 system
+  dependencies, enabling clean cross-compilation for all targets.
+
+#### Added
+
+* Added GitHub Actions CI workflow: `cargo check`, `cargo fmt --check`,
+  `cargo clippy -D warnings`, and `cargo test` across Linux, macOS, and
+  Windows.
+* Added GitHub Actions release workflow: cross-compiles for 5 targets
+  (`x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, `aarch64-darwin`,
+  `x86_64-windows`) and uploads binaries to GitHub Releases on tag push.
+* Added performance benchmarks (`benchmarks/bench.sh`) using hyperfine.
+* Added `LICENSE.md` (GPL-3.0-or-later).
+
+[gix]: https://github.com/Byron/gitoxide
+
 ### 1.0.0 / 2026-02-11
 
 Initial release -- a complete Rust rewrite of [bundler-audit] v0.9.x.
@@ -13,7 +34,7 @@ Initial release -- a complete Rust rewrite of [bundler-audit] v0.9.x.
   dependencies, and compound version constraints.
 * Implemented advisory YAML deserialization with vulnerability checking
   (`patched_versions`, `unaffected_versions`) and CVSS v3/v2 criticality.
-* Implemented advisory database management using `git2` (libgit2) for
+* Implemented advisory database management using [gix] (gitoxide) for
   clone and fast-forward update of [ruby-advisory-db].
 * Implemented scanner that ties lockfile and database together:
   * Detects insecure gem sources (`git://` and `http://` protocols).

@@ -18,7 +18,7 @@ pub enum DatabaseError {
     NotFound(PathBuf),
     DownloadFailed(String),
     UpdateFailed(String),
-    Git(git2::Error),
+    Git(String),
     Io(std::io::Error),
 }
 
@@ -35,12 +35,6 @@ impl fmt::Display for DatabaseError {
 }
 
 impl std::error::Error for DatabaseError {}
-
-impl From<git2::Error> for DatabaseError {
-    fn from(e: git2::Error) -> Self {
-        DatabaseError::Git(e)
-    }
-}
 
 impl From<std::io::Error> for DatabaseError {
     fn from(e: std::io::Error) -> Self {
@@ -70,48 +64,75 @@ impl Database {
     }
 
     /// Download the ruby-advisory-db to the given path.
-    pub fn download(path: &Path, quiet: bool) -> Result<Self, DatabaseError> {
-        let mut builder = git2::build::RepoBuilder::new();
-        if quiet {
-            // Suppress progress callbacks
-        }
-        builder.clone(ADVISORY_DB_URL, path).map_err(|e| {
-            DatabaseError::DownloadFailed(format!(
-                "failed to clone {} to {}: {}",
-                ADVISORY_DB_URL,
-                path.display(),
-                e
-            ))
-        })?;
+    pub fn download(path: &Path, _quiet: bool) -> Result<Self, DatabaseError> {
+        let (mut checkout, _outcome) = gix::prepare_clone(ADVISORY_DB_URL, path)
+            .map_err(|e| DatabaseError::DownloadFailed(e.to_string()))?
+            .fetch_then_checkout(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)
+            .map_err(|e| DatabaseError::DownloadFailed(e.to_string()))?;
+
+        let (_repo, _outcome) = checkout
+            .main_worktree(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)
+            .map_err(|e| DatabaseError::DownloadFailed(e.to_string()))?;
+
         Ok(Database {
             path: path.to_path_buf(),
         })
     }
 
-    /// Update the database by pulling from origin/master.
+    /// Update the database by fetching from origin and fast-forwarding.
     pub fn update(&self) -> Result<bool, DatabaseError> {
         if !self.is_git() {
             return Ok(false);
         }
 
-        let repo = git2::Repository::open(&self.path)?;
+        let repo = gix::open(&self.path).map_err(|e| DatabaseError::Git(e.to_string()))?;
 
-        // Fetch origin
-        let mut remote = repo.find_remote("origin")?;
-        remote.fetch(&["master"], None, None)?;
+        let remote = repo
+            .find_default_remote(gix::remote::Direction::Fetch)
+            .ok_or_else(|| DatabaseError::UpdateFailed("no remote configured".to_string()))?
+            .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?;
 
-        // Get the fetch head
-        let fetch_head = repo.find_reference("FETCH_HEAD")?;
-        let fetch_commit = repo.reference_to_annotated_commit(&fetch_head)?;
+        let connection = remote
+            .connect(gix::remote::Direction::Fetch)
+            .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?;
 
-        // Fast-forward merge
-        let (analysis, _) = repo.merge_analysis(&[&fetch_commit])?;
-        if analysis.is_fast_forward() {
-            let mut reference = repo.find_reference("refs/heads/master")?;
-            reference.set_target(fetch_commit.id(), "fast-forward update")?;
-            repo.set_head("refs/heads/master")?;
-            repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))?;
-        }
+        let _outcome = connection
+            .prepare_fetch(gix::progress::Discard, Default::default())
+            .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?
+            .receive(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)
+            .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?;
+
+        // Checkout the updated HEAD to working tree
+        let repo = gix::open(&self.path).map_err(|e| DatabaseError::Git(e.to_string()))?;
+        let tree = repo
+            .head_commit()
+            .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?
+            .tree()
+            .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?;
+
+        let mut index = repo
+            .index_from_tree(&tree.id)
+            .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?;
+
+        let opts = gix::worktree::state::checkout::Options {
+            overwrite_existing: true,
+            ..Default::default()
+        };
+
+        gix::worktree::state::checkout(
+            &mut index,
+            repo.workdir()
+                .ok_or_else(|| DatabaseError::UpdateFailed("bare repository".to_string()))?,
+            repo.objects
+                .clone()
+                .into_arc()
+                .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?,
+            &gix::progress::Discard,
+            &gix::progress::Discard,
+            &gix::interrupt::IS_INTERRUPTED,
+            opts,
+        )
+        .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?;
 
         Ok(true)
     }
@@ -136,9 +157,9 @@ impl Database {
         if !self.is_git() {
             return None;
         }
-        let repo = git2::Repository::open(&self.path).ok()?;
-        let head = repo.head().ok()?;
-        head.target().map(|oid| oid.to_string())
+        let repo = gix::open(&self.path).ok()?;
+        let id = repo.head_id().ok()?;
+        Some(id.to_string())
     }
 
     /// The timestamp of the last commit.
@@ -146,10 +167,10 @@ impl Database {
         if !self.is_git() {
             return None;
         }
-        let repo = git2::Repository::open(&self.path).ok()?;
-        let head = repo.head().ok()?;
-        let commit = head.peel_to_commit().ok()?;
-        Some(commit.time().seconds())
+        let repo = gix::open(&self.path).ok()?;
+        let commit = repo.head_commit().ok()?;
+        let time = commit.time().ok()?;
+        Some(time.seconds)
     }
 
     /// Enumerate all advisories in the database.
@@ -227,7 +248,11 @@ impl Database {
                     match Advisory::load(&path) {
                         Ok(advisory) => results.push(advisory),
                         Err(e) => {
-                            eprintln!("warning: failed to load advisory {}: {}", path.display(), e);
+                            eprintln!(
+                                "warning: failed to load advisory {}: {}",
+                                path.display(),
+                                e
+                            );
                         }
                     }
                 }
