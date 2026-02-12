@@ -1,6 +1,6 @@
 use std::collections::HashSet;
-use std::fmt;
 use std::path::Path;
+use thiserror::Error;
 
 /// Configuration loaded from a `.bundler-audit.yml` file.
 #[derive(Debug, Clone, Default)]
@@ -10,33 +10,18 @@ pub struct Configuration {
 }
 
 /// Errors that can occur when loading a configuration file.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ConfigError {
     /// The file was not found.
+    #[error("configuration file not found: {0}")]
     FileNotFound(String),
     /// The YAML content is invalid.
+    #[error("invalid YAML in configuration: {0}")]
     InvalidYaml(String),
     /// The configuration structure is invalid.
+    #[error("invalid configuration: {0}")]
     InvalidConfiguration(String),
 }
-
-impl fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ConfigError::FileNotFound(path) => {
-                write!(f, "configuration file not found: {}", path)
-            }
-            ConfigError::InvalidYaml(msg) => {
-                write!(f, "invalid YAML in configuration: {}", msg)
-            }
-            ConfigError::InvalidConfiguration(msg) => {
-                write!(f, "invalid configuration: {}", msg)
-            }
-        }
-    }
-}
-
-impl std::error::Error for ConfigError {}
 
 impl Configuration {
     /// The default configuration file name.

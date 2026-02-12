@@ -1,4 +1,5 @@
 use std::fmt;
+use thiserror::Error;
 
 use super::gem_version::Version;
 
@@ -84,24 +85,15 @@ pub struct Requirement {
     pub constraints: Vec<VersionConstraint>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum RequirementError {
+    #[error("invalid operator: '{0}'")]
     InvalidOperator(String),
+    #[error("invalid version: '{0}'")]
     InvalidVersion(String),
+    #[error("empty requirement string")]
     Empty,
 }
-
-impl fmt::Display for RequirementError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RequirementError::InvalidOperator(op) => write!(f, "invalid operator: '{}'", op),
-            RequirementError::InvalidVersion(v) => write!(f, "invalid version: '{}'", v),
-            RequirementError::Empty => write!(f, "empty requirement string"),
-        }
-    }
-}
-
-impl std::error::Error for RequirementError {}
 
 impl Requirement {
     /// Parse a requirement string.

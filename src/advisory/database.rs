@@ -1,5 +1,6 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
+use thiserror::Error;
 
 use super::model::Advisory;
 use crate::version::Version;
@@ -13,33 +14,18 @@ pub struct Database {
     path: PathBuf,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum DatabaseError {
+    #[error("database not found at {}", .0.display())]
     NotFound(PathBuf),
+    #[error("download failed: {0}")]
     DownloadFailed(String),
+    #[error("update failed: {0}")]
     UpdateFailed(String),
+    #[error("git error: {0}")]
     Git(String),
-    Io(std::io::Error),
-}
-
-impl fmt::Display for DatabaseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DatabaseError::NotFound(p) => write!(f, "database not found at {}", p.display()),
-            DatabaseError::DownloadFailed(e) => write!(f, "download failed: {}", e),
-            DatabaseError::UpdateFailed(e) => write!(f, "update failed: {}", e),
-            DatabaseError::Git(e) => write!(f, "git error: {}", e),
-            DatabaseError::Io(e) => write!(f, "IO error: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for DatabaseError {}
-
-impl From<std::io::Error> for DatabaseError {
-    fn from(e: std::io::Error) -> Self {
-        DatabaseError::Io(e)
-    }
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 impl Database {

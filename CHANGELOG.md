@@ -1,3 +1,13 @@
+### 1.2.0 / 2026-02-12
+
+#### Changed
+
+* Migrated all 7 error types to [thiserror], replacing ~124 lines of
+  hand-written `impl Display`, `impl Error`, and `impl From` boilerplate
+  with derive macros (`#[error("...")]`, `#[from]`).
+
+[thiserror]: https://github.com/dtolnay/thiserror
+
 ### 1.1.0 / 2026-02-12
 
 #### Changed

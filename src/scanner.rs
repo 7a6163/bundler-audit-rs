@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs};
 use std::path::Path;
+use thiserror::Error;
 
 use crate::advisory::{Advisory, Database, DatabaseError};
 use crate::lockfile::{self, Lockfile, Source};
@@ -70,37 +71,16 @@ pub struct ScanOptions {
     pub ignore: HashSet<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ScanError {
+    #[error("Gemfile.lock not found: {0}")]
     LockfileNotFound(String),
+    #[error("failed to parse Gemfile.lock: {0}")]
     LockfileParse(String),
-    Database(DatabaseError),
-    Io(std::io::Error),
-}
-
-impl fmt::Display for ScanError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ScanError::LockfileNotFound(p) => write!(f, "Gemfile.lock not found: {}", p),
-            ScanError::LockfileParse(e) => write!(f, "failed to parse Gemfile.lock: {}", e),
-            ScanError::Database(e) => write!(f, "database error: {}", e),
-            ScanError::Io(e) => write!(f, "IO error: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for ScanError {}
-
-impl From<DatabaseError> for ScanError {
-    fn from(e: DatabaseError) -> Self {
-        ScanError::Database(e)
-    }
-}
-
-impl From<std::io::Error> for ScanError {
-    fn from(e: std::io::Error) -> Self {
-        ScanError::Io(e)
-    }
+    #[error("database error: {0}")]
+    Database(#[from] DatabaseError),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 /// The main scanner that audits a Gemfile.lock for security issues.

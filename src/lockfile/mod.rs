@@ -2,7 +2,7 @@ mod parser;
 
 pub use parser::parse;
 
-use std::fmt;
+use thiserror::Error;
 
 /// A parsed Gemfile.lock file.
 #[derive(Debug, Clone)]
@@ -111,31 +111,15 @@ pub struct Dependency {
 }
 
 /// Errors that can occur while parsing a Gemfile.lock.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseError {
     /// An unexpected line was encountered.
+    #[error("unexpected line at {line_number}: '{content}'")]
     UnexpectedLine { line_number: usize, content: String },
     /// A required field was missing.
+    #[error("missing field '{field}' in section '{section}'")]
     MissingField { section: String, field: String },
     /// The file is empty or contains no parseable content.
+    #[error("empty or unparseable lockfile")]
     Empty,
 }
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ParseError::UnexpectedLine {
-                line_number,
-                content,
-            } => {
-                write!(f, "unexpected line at {}: '{}'", line_number, content)
-            }
-            ParseError::MissingField { section, field } => {
-                write!(f, "missing field '{}' in section '{}'", field, section)
-            }
-            ParseError::Empty => write!(f, "empty or unparseable lockfile"),
-        }
-    }
-}
-
-impl std::error::Error for ParseError {}

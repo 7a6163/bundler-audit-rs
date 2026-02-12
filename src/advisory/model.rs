@@ -1,5 +1,6 @@
 use std::fmt;
 use std::path::Path;
+use thiserror::Error;
 
 use serde::Deserialize;
 
@@ -91,37 +92,14 @@ pub struct Advisory {
     pub unaffected_versions: Vec<Requirement>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum AdvisoryError {
-    Io(std::io::Error),
-    Yaml(serde_yaml::Error),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("YAML parse error: {0}")]
+    Yaml(#[from] serde_yaml::Error),
+    #[error("invalid requirement '{version_str}': {error}")]
     InvalidRequirement { version_str: String, error: String },
-}
-
-impl fmt::Display for AdvisoryError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            AdvisoryError::Io(e) => write!(f, "IO error: {}", e),
-            AdvisoryError::Yaml(e) => write!(f, "YAML parse error: {}", e),
-            AdvisoryError::InvalidRequirement { version_str, error } => {
-                write!(f, "invalid requirement '{}': {}", version_str, error)
-            }
-        }
-    }
-}
-
-impl std::error::Error for AdvisoryError {}
-
-impl From<std::io::Error> for AdvisoryError {
-    fn from(e: std::io::Error) -> Self {
-        AdvisoryError::Io(e)
-    }
-}
-
-impl From<serde_yaml::Error> for AdvisoryError {
-    fn from(e: serde_yaml::Error) -> Self {
-        AdvisoryError::Yaml(e)
-    }
 }
 
 impl Advisory {

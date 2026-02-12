@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::fmt;
+use thiserror::Error;
 
 /// A segment of a gem version string.
 ///
@@ -64,24 +65,15 @@ pub struct Version {
     original: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum VersionError {
+    #[error("empty version string")]
     Empty,
+    #[error("invalid character in version: '{0}'")]
     InvalidCharacter(char),
+    #[error("invalid version format: '{0}'")]
     InvalidFormat(String),
 }
-
-impl fmt::Display for VersionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            VersionError::Empty => write!(f, "empty version string"),
-            VersionError::InvalidCharacter(c) => write!(f, "invalid character in version: '{}'", c),
-            VersionError::InvalidFormat(s) => write!(f, "invalid version format: '{}'", s),
-        }
-    }
-}
-
-impl std::error::Error for VersionError {}
 
 impl Version {
     /// Parse a version string into a `Version`.
