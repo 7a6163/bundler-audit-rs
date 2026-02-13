@@ -56,12 +56,15 @@ impl Configuration {
         }
 
         // Fall back to legacy config name in the same directory
-        if path.file_name().map(|f| f == Self::DEFAULT_FILE).unwrap_or(false) {
-            if let Some(parent) = path.parent() {
-                let legacy = parent.join(Self::LEGACY_FILE);
-                if legacy.exists() {
-                    return Self::load(&legacy);
-                }
+        if path
+            .file_name()
+            .map(|f| f == Self::DEFAULT_FILE)
+            .unwrap_or(false)
+            && let Some(parent) = path.parent()
+        {
+            let legacy = parent.join(Self::LEGACY_FILE);
+            if legacy.exists() {
+                return Self::load(&legacy);
             }
         }
 

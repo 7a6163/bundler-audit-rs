@@ -17,9 +17,7 @@ fn mock_db() -> PathBuf {
 fn real_db_path() -> Option<PathBuf> {
     let path = std::env::var("GEM_AUDIT_DB")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            dirs().unwrap_or_else(|| PathBuf::from("."))
-        });
+        .unwrap_or_else(|_| dirs().unwrap_or_else(|| PathBuf::from(".")));
     if path.join("gems").is_dir() {
         Some(path)
     } else {
@@ -254,10 +252,8 @@ fn check_ignore_advisory() {
 fn check_with_config_ignore() {
     let Some(db) = real_db_path() else { return };
 
-    let lockfile = fixtures_dir()
-        .join("unpatched_gems_with_config/Gemfile.lock");
-    let config = fixtures_dir()
-        .join("unpatched_gems_with_config/.gem-audit.yml");
+    let lockfile = fixtures_dir().join("unpatched_gems_with_config/Gemfile.lock");
+    let config = fixtures_dir().join("unpatched_gems_with_config/.gem-audit.yml");
 
     // Without config: should find vulnerabilities
     Command::cargo_bin("gem-audit")
