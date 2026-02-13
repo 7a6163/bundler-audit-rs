@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use thiserror::Error;
 
-/// Configuration loaded from a `.bundler-audit.yml` file.
+/// Configuration loaded from a `.gem-audit.yml` file.
 #[derive(Debug, Clone, Default)]
 pub struct Configuration {
     /// Advisory IDs to ignore during scanning.
@@ -25,7 +25,10 @@ pub enum ConfigError {
 
 impl Configuration {
     /// The default configuration file name.
-    pub const DEFAULT_FILE: &str = ".bundler-audit.yml";
+    pub const DEFAULT_FILE: &str = ".gem-audit.yml";
+
+    /// Legacy configuration file name for backward compatibility.
+    pub const LEGACY_FILE: &str = ".bundler-audit.yml";
 
     /// Load configuration from a YAML file.
     ///
@@ -43,11 +46,26 @@ impl Configuration {
 
     /// Load configuration from a YAML file path, returning a default
     /// configuration if the file does not exist.
+    ///
+    /// When the primary path does not exist and its file name matches the
+    /// default (`.gem-audit.yml`), the legacy name (`.bundler-audit.yml`)
+    /// is tried in the same directory for backward compatibility.
     pub fn load_or_default(path: &Path) -> Result<Self, ConfigError> {
-        if !path.exists() {
-            return Ok(Self::default());
+        if path.exists() {
+            return Self::load(path);
         }
-        Self::load(path)
+
+        // Fall back to legacy config name in the same directory
+        if path.file_name().map(|f| f == Self::DEFAULT_FILE).unwrap_or(false) {
+            if let Some(parent) = path.parent() {
+                let legacy = parent.join(Self::LEGACY_FILE);
+                if legacy.exists() {
+                    return Self::load(&legacy);
+                }
+            }
+        }
+
+        Ok(Self::default())
     }
 
     /// Parse configuration from a YAML string.
@@ -127,13 +145,13 @@ mod tests {
     #[test]
     fn load_missing_file_returns_default() {
         let config =
-            Configuration::load_or_default(Path::new("/nonexistent/.bundler-audit.yml")).unwrap();
+            Configuration::load_or_default(Path::new("/nonexistent/.gem-audit.yml")).unwrap();
         assert!(config.ignore.is_empty());
     }
 
     #[test]
     fn load_missing_file_returns_error() {
-        let result = Configuration::load(Path::new("/nonexistent/.bundler-audit.yml"));
+        let result = Configuration::load(Path::new("/nonexistent/.gem-audit.yml"));
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, ConfigError::FileNotFound(_)));

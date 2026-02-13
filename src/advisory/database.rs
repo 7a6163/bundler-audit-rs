@@ -41,9 +41,9 @@ impl Database {
 
     /// The default database path: `~/.local/share/ruby-advisory-db`.
     ///
-    /// Can be overridden by `BUNDLER_AUDIT_DB` environment variable.
+    /// Can be overridden by `GEM_AUDIT_DB` environment variable.
     pub fn default_path() -> PathBuf {
-        if let Ok(custom) = std::env::var("BUNDLER_AUDIT_DB") {
+        if let Ok(custom) = std::env::var("GEM_AUDIT_DB") {
             return PathBuf::from(custom);
         }
         dirs_fallback()

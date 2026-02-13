@@ -2,13 +2,13 @@
 set -euo pipefail
 
 # ============================================================
-# bundler-audit benchmark: Rust vs Ruby
+# gem-audit benchmark: Rust vs Ruby
 # Requires: hyperfine, ruby, bundle-audit (gem), cargo
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-RUST_BIN="$PROJECT_DIR/target/release/bundler-audit"
+RUST_BIN="$PROJECT_DIR/target/release/gem-audit"
 FIXTURE_DIR="$PROJECT_DIR/tests/fixtures"
 WARMUP=3
 RUNS=20

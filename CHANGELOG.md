@@ -1,3 +1,15 @@
+### 2.0.0 / 2026-02-13
+
+#### Changed
+
+* **Renamed project from `bundler-audit` to `gem-audit`.**
+  Binary, crate name, and all CLI output now use the `gem-audit` name.
+* Changed default configuration file from `.bundler-audit.yml` to
+  `.gem-audit.yml`. The legacy `.bundler-audit.yml` is still loaded
+  automatically as a fallback for backward compatibility.
+* Changed environment variable from `BUNDLER_AUDIT_DB` to `GEM_AUDIT_DB`.
+* Changed license from GPL-3.0-or-later to MIT.
+
 ### 1.2.0 / 2026-02-12
 
 #### Changed
@@ -51,12 +63,12 @@ Initial release -- a complete Rust rewrite of [bundler-audit] v0.9.x.
   * Checks each gem against the advisory database.
   * Ignores internal/private sources (RFC 1918, RFC 4193, RFC 6890 IP ranges).
   * Supports ignore lists by advisory ID (CVE, GHSA, OSVDB).
-* Added `.bundler-audit.yml` configuration file support with strict
+* Added `.gem-audit.yml` configuration file support with strict
   YAML validation. CLI `--ignore` takes precedence over the config file.
 
 #### CLI
 
-* Added `bundler-audit check` command (also the default when no subcommand
+* Added `gem-audit check` command (also the default when no subcommand
   is given), with options:
   * `--quiet` / `-q` to suppress output.
   * `--verbose` / `-v` to show full advisory descriptions.
@@ -67,10 +79,10 @@ Initial release -- a complete Rust rewrite of [bundler-audit] v0.9.x.
   * `--gemfile-lock` / `-G` to specify a custom lockfile path.
   * `--config` / `-c` to specify a custom configuration file path.
   * `--output` / `-o` to write output to a file.
-* Added `bundler-audit update` command.
-* Added `bundler-audit download` command.
-* Added `bundler-audit stats` command.
-* Added `bundler-audit version` command.
+* Added `gem-audit update` command.
+* Added `gem-audit download` command.
+* Added `gem-audit stats` command.
+* Added `gem-audit version` command.
 * Auto-downloads [ruby-advisory-db] on first run if not present.
 * TTY detection for ANSI color output and JSON pretty-printing.
 

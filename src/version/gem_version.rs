@@ -49,7 +49,7 @@ impl fmt::Display for Segment {
 ///
 /// # Examples
 /// ```
-/// use bundler_audit::version::Version;
+/// use gem_audit::version::Version;
 ///
 /// let v1 = Version::parse("1.2.3").unwrap();
 /// let v2 = Version::parse("1.2.4").unwrap();

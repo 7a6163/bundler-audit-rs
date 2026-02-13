@@ -5,16 +5,16 @@ use std::process;
 
 use clap::{Parser, Subcommand};
 
-use bundler_audit::advisory::Database;
-use bundler_audit::configuration::Configuration;
-use bundler_audit::format::{self, OutputFormat};
-use bundler_audit::scanner::{ScanOptions, Scanner};
+use gem_audit::advisory::Database;
+use gem_audit::configuration::Configuration;
+use gem_audit::format::{self, OutputFormat};
+use gem_audit::scanner::{ScanOptions, Scanner};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Parser)]
 #[command(
-    name = "bundler-audit",
+    name = "gem-audit",
     about = "Patch-level verification for Ruby Bundler dependencies",
     version = VERSION,
 )]
@@ -60,7 +60,7 @@ enum Commands {
         gemfile_lock: String,
 
         /// Path to the configuration file
-        #[arg(short, long, default_value = ".bundler-audit.yml")]
+        #[arg(short, long, default_value = ".gem-audit.yml")]
         config: String,
 
         /// Output file (default: stdout)
@@ -97,7 +97,7 @@ enum Commands {
         database: Option<String>,
     },
 
-    /// Print the bundler-audit version
+    /// Print the gem-audit version
     Version,
 }
 
@@ -138,10 +138,10 @@ fn main() {
             cmd_stats(database.as_deref());
         }
         Some(Commands::Version) => {
-            println!("bundler-audit {}", VERSION);
+            println!("gem-audit {}", VERSION);
         }
         None => {
-            // Default command is check (like Ruby bundler-audit)
+            // Default command is check (like Ruby bundler-audit's behavior)
             cmd_check(
                 ".",
                 false,

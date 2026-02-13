@@ -1,10 +1,10 @@
-# bundler-audit-rs
+# gem-audit
 
 Patch-level verification for [Bundler] dependencies, rewritten in Rust.
 
-A drop-in replacement for [bundler-audit] that compiles to a single static
-binary with zero runtime dependencies -- no Ruby, no Bundler, no gem install
-required.
+A security auditor for `Gemfile.lock` inspired by [bundler-audit], compiled to a
+single static binary with zero runtime dependencies -- no Ruby, no Bundler, no
+gem install required.
 
 ## Features
 
@@ -27,10 +27,10 @@ $ cargo install --path .
 ### Build from source
 
 ```
-$ git clone https://github.com/user/bundler-audit-rs.git
-$ cd bundler-audit-rs
+$ git clone https://github.com/user/gem-audit.git
+$ cd gem-audit
 $ cargo build --release
-$ ./target/release/bundler-audit --version
+$ ./target/release/gem-audit --version
 ```
 
 ## Usage
@@ -38,7 +38,7 @@ $ ./target/release/bundler-audit --version
 Audit a project's `Gemfile.lock`:
 
 ```
-$ bundler-audit
+$ gem-audit
 Name: activerecord
 Version: 3.2.10
 CVE: CVE-2015-7577
@@ -54,37 +54,37 @@ Vulnerabilities found!
 Update the [ruby-advisory-db] before checking:
 
 ```
-$ bundler-audit check --update
+$ gem-audit check --update
 ```
 
 Ignore specific advisories:
 
 ```
-$ bundler-audit check --ignore CVE-2020-1234 GHSA-xxxx-yyyy-zzzz
+$ gem-audit check --ignore CVE-2020-1234 GHSA-xxxx-yyyy-zzzz
 ```
 
 Audit a specific directory:
 
 ```
-$ bundler-audit check /path/to/project
+$ gem-audit check /path/to/project
 ```
 
 Check a custom `Gemfile.lock` file:
 
 ```
-$ bundler-audit check --gemfile-lock Gemfile.custom.lock
+$ gem-audit check --gemfile-lock Gemfile.custom.lock
 ```
 
 Output in JSON format:
 
 ```
-$ bundler-audit check --format json
+$ gem-audit check --format json
 ```
 
 Output to a file:
 
 ```
-$ bundler-audit check --format json --output audit-results.json
+$ gem-audit check --format json --output audit-results.json
 ```
 
 ## Commands
@@ -95,9 +95,9 @@ $ bundler-audit check --format json --output audit-results.json
 | `update`   | Update the ruby-advisory-db                              |
 | `download` | Download the ruby-advisory-db                            |
 | `stats`    | Print ruby-advisory-db statistics                        |
-| `version`  | Print the bundler-audit version                          |
+| `version`  | Print the gem-audit version                              |
 
-Running `bundler-audit` with no subcommand is equivalent to `bundler-audit check`.
+Running `gem-audit` with no subcommand is equivalent to `gem-audit check`.
 
 ## Check Options
 
@@ -110,12 +110,12 @@ Running `bundler-audit` with no subcommand is equivalent to `bundler-audit check
 | `-D`, `--database <PATH>`   | Path to the advisory database              |
 | `-F`, `--format <FORMAT>`   | Output format: `text` (default) or `json`  |
 | `-G`, `--gemfile-lock <FILE>` | Path to the Gemfile.lock file            |
-| `-c`, `--config <FILE>`     | Configuration file (default: `.bundler-audit.yml`) |
+| `-c`, `--config <FILE>`     | Configuration file (default: `.gem-audit.yml`) |
 | `-o`, `--output <FILE>`     | Write output to a file instead of stdout   |
 
 ## Configuration File
 
-bundler-audit supports a per-project configuration file (`.bundler-audit.yml`):
+gem-audit supports a per-project configuration file (`.gem-audit.yml`):
 
 ```yaml
 ---
@@ -126,10 +126,13 @@ ignore:
 
 * `ignore:` \[Array\<String\>\] - Advisory IDs to ignore (CVE, GHSA, or OSVDB).
 
+The legacy `.bundler-audit.yml` file name is also supported for backward
+compatibility.
+
 You can specify a custom config file path:
 
 ```
-$ bundler-audit check --config custom-audit.yml
+$ gem-audit check --config custom-audit.yml
 ```
 
 CLI `--ignore` flags take precedence over the configuration file.
@@ -153,13 +156,13 @@ $ ./benchmarks/bench.sh
 
 ## Compatibility
 
-This is a compatible reimplementation of [bundler-audit] v0.9.x in Rust.
+This is a Rust reimplementation inspired by [bundler-audit] v0.9.x.
 It uses the same [ruby-advisory-db] and produces equivalent output.
 
 Key differences from the Ruby version:
 
 * Single static binary -- no Ruby runtime required.
-* Uses [libgit2] (via the `git2` crate) instead of shelling out to `git`.
+* Uses [gix] (gitoxide), a pure Rust git implementation.
 * No Rake task integration (not applicable outside Ruby projects).
 * No JUnit output format (text and JSON only).
 
@@ -174,9 +177,9 @@ src/
     parser.rs       # State-machine parser with indentation tracking
   advisory/         # Advisory database
     model.rs        # Advisory YAML deserialization, vulnerability checking, CVSS
-    database.rs     # Database clone/update via git2, advisory enumeration
+    database.rs     # Database clone/update via gix, advisory enumeration
   scanner.rs        # Ties lockfile + database; source & spec scanning
-  configuration.rs  # .bundler-audit.yml loading and validation
+  configuration.rs  # .gem-audit.yml loading and validation
   format/           # Output formatters
     text.rs         # Human-readable text with ANSI colors
     json.rs         # JSON output with serde_json
@@ -185,10 +188,10 @@ src/
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE.md](LICENSE.md) for details.
+MIT. See [LICENSE.md](LICENSE.md) for details.
 
 [Bundler]: https://bundler.io
 [bundler-audit]: https://github.com/rubysec/bundler-audit
 [ruby-advisory-db]: https://github.com/rubysec/ruby-advisory-db
-[libgit2]: https://libgit2.org
+[gix]: https://github.com/Byron/gitoxide
 [hyperfine]: https://github.com/sharkdp/hyperfine

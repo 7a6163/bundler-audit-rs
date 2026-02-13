@@ -76,7 +76,7 @@ impl fmt::Display for VersionConstraint {
 ///
 /// # Examples
 /// ```
-/// use bundler_audit::version::Requirement;
+/// use gem_audit::version::Requirement;
 ///
 /// let req = Requirement::parse("~> 1.2.3").unwrap();
 /// ```
