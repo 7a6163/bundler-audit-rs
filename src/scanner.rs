@@ -4,7 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs};
 use std::path::Path;
 use thiserror::Error;
 
-use crate::advisory::{Advisory, Database, DatabaseError};
+use crate::advisory::{Advisory, Criticality, Database, DatabaseError};
 use crate::lockfile::{self, Lockfile, Source};
 use crate::version::Version;
 
@@ -50,6 +50,10 @@ impl fmt::Display for UnpatchedGem {
 pub struct Report {
     pub insecure_sources: Vec<InsecureSource>,
     pub unpatched_gems: Vec<UnpatchedGem>,
+    /// Number of gem versions that failed to parse.
+    pub version_parse_errors: usize,
+    /// Number of advisory YAML files that failed to load.
+    pub advisory_load_errors: usize,
 }
 
 impl Report {
@@ -69,6 +73,10 @@ impl Report {
 pub struct ScanOptions {
     /// Advisory IDs to ignore (e.g., "CVE-2020-1234", "GHSA-aaaa-bbbb-cccc").
     pub ignore: HashSet<String>,
+    /// Minimum severity threshold: only report advisories at or above this level.
+    pub severity: Option<Criticality>,
+    /// Treat parse/load warnings as significant (tracked in report error counters).
+    pub strict: bool,
 }
 
 #[derive(Debug, Error)]
@@ -109,11 +117,13 @@ impl Scanner {
     /// Run a full scan and produce a report.
     pub fn scan(&self, options: &ScanOptions) -> Report {
         let insecure_sources = self.scan_sources();
-        let unpatched_gems = self.scan_specs(options);
+        let (unpatched_gems, version_parse_errors, advisory_load_errors) = self.scan_specs(options);
 
         Report {
             insecure_sources,
             unpatched_gems,
+            version_parse_errors,
+            advisory_load_errors,
         }
     }
 
@@ -147,8 +157,12 @@ impl Scanner {
     }
 
     /// Scan gem specs against the advisory database.
-    pub fn scan_specs(&self, options: &ScanOptions) -> Vec<UnpatchedGem> {
+    ///
+    /// Returns `(unpatched_gems, version_parse_errors, advisory_load_errors)`.
+    pub fn scan_specs(&self, options: &ScanOptions) -> (Vec<UnpatchedGem>, usize, usize) {
         let mut results = Vec::new();
+        let mut version_parse_errors: usize = 0;
+        let mut advisory_load_errors: usize = 0;
 
         // Deduplicate: only check each gem name+version once (skip platform variants)
         let mut seen = HashSet::new();
@@ -161,10 +175,20 @@ impl Scanner {
 
             let version = match Version::parse(&spec.version) {
                 Ok(v) => v,
-                Err(_) => continue,
+                Err(_) => {
+                    version_parse_errors += 1;
+                    if options.strict {
+                        eprintln!(
+                            "warning: failed to parse version '{}' for gem '{}'",
+                            spec.version, spec.name
+                        );
+                    }
+                    continue;
+                }
             };
 
-            let advisories = self.database.check_gem(&spec.name, &version);
+            let (advisories, load_errors) = self.database.check_gem(&spec.name, &version);
+            advisory_load_errors += load_errors;
 
             for advisory in advisories {
                 // Check if any of the advisory's identifiers are in the ignore list
@@ -172,6 +196,14 @@ impl Scanner {
                     let identifiers: HashSet<String> = advisory.identifiers().into_iter().collect();
                     if !options.ignore.is_disjoint(&identifiers) {
                         continue;
+                    }
+                }
+
+                // Filter by severity threshold
+                if let Some(threshold) = &options.severity {
+                    match advisory.criticality() {
+                        Some(crit) if crit >= *threshold => {}
+                        _ => continue, // Below threshold or no CVSS score
                     }
                 }
 
@@ -183,7 +215,10 @@ impl Scanner {
             }
         }
 
-        results
+        // Sort by criticality descending (Critical first, None/Unknown last)
+        results.sort_by(|a, b| b.advisory.criticality().cmp(&a.advisory.criticality()));
+
+        (results, version_parse_errors, advisory_load_errors)
     }
 }
 
@@ -468,7 +503,7 @@ mod tests {
         let scanner = Scanner::from_lockfile(lockfile, db);
 
         let opts = ScanOptions::default();
-        let vulns = scanner.scan_specs(&opts);
+        let (vulns, _, _) = scanner.scan_specs(&opts);
         assert!(vulns.is_empty());
     }
 
@@ -520,7 +555,7 @@ mod tests {
 
             // First get all vulnerabilities
             let all_opts = ScanOptions::default();
-            let all_vulns = scanner.scan_specs(&all_opts);
+            let (all_vulns, _, _) = scanner.scan_specs(&all_opts);
 
             if let Some(first_vuln) = all_vulns.first() {
                 // Now ignore the first advisory
@@ -528,8 +563,11 @@ mod tests {
                 for id in first_vuln.advisory.identifiers() {
                     ignore.insert(id);
                 }
-                let filtered_opts = ScanOptions { ignore };
-                let filtered_vulns = scanner.scan_specs(&filtered_opts);
+                let filtered_opts = ScanOptions {
+                    ignore,
+                    ..Default::default()
+                };
+                let (filtered_vulns, _, _) = scanner.scan_specs(&filtered_opts);
 
                 assert!(
                     filtered_vulns.len() < all_vulns.len(),
@@ -548,6 +586,8 @@ mod tests {
                 source: "http://rubygems.org/".to_string(),
             }],
             unpatched_gems: vec![],
+            version_parse_errors: 0,
+            advisory_load_errors: 0,
         };
         assert!(report.vulnerable());
         assert_eq!(report.count(), 1);
@@ -558,6 +598,8 @@ mod tests {
         let report = Report {
             insecure_sources: vec![],
             unpatched_gems: vec![],
+            version_parse_errors: 0,
+            advisory_load_errors: 0,
         };
         assert!(!report.vulnerable());
         assert_eq!(report.count(), 0);

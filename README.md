@@ -11,6 +11,10 @@ gem install required.
 * Checks for vulnerable versions of gems in `Gemfile.lock`.
 * Checks for insecure gem sources (`http://` and `git://`).
 * Allows ignoring specific advisories via CLI flags or a configuration file.
+* Filters by severity threshold (`--severity`).
+* Warns when the advisory database is stale (`--max-db-age`).
+* Strict mode treats parse/load warnings as errors (`--strict`).
+* Semantic exit codes for CI/CD integration (0/1/2/3).
 * Prints advisory information (CVE, GHSA, CVSS criticality, solution).
 * Supports text and JSON output formats.
 * Downloads and updates the [ruby-advisory-db] automatically.
@@ -39,16 +43,16 @@ Audit a project's `Gemfile.lock`:
 
 ```
 $ gem-audit
-Name: activerecord
-Version: 3.2.10
-CVE: CVE-2015-7577
-GHSA: GHSA-xrr6-3pc4-m447
-Criticality: Medium
-URL: https://groups.google.com/forum/#!topic/rubyonrails-security/cawsWcQ6c8g
-Title: Nested attributes rejection proc bypass in Active Record
-Solution: upgrade to '>= 5.0.0.beta1.1', '~> 4.2.5, >= 4.2.5.1', '~> 4.1.14, >= 4.1.14.1', '~> 3.2.22.1'
+        Name: activerecord
+     Version: 3.2.10
+         CVE: CVE-2015-7577
+        GHSA: GHSA-xrr6-3pc4-m447
+ Criticality: Medium
+         URL: https://groups.google.com/forum/#!topic/rubyonrails-security/cawsWcQ6c8g
+       Title: Nested attributes rejection proc bypass in Active Record
+    Solution: upgrade to '>= 5.0.0.beta1.1', '~> 4.2.5, >= 4.2.5.1', '~> 4.1.14, >= 4.1.14.1', '~> 3.2.22.1'
 
-Vulnerabilities found!
+Vulnerabilities found! (1 unpatched gem)
 ```
 
 Update the [ruby-advisory-db] before checking:
@@ -87,6 +91,30 @@ Output to a file:
 $ gem-audit check --format json --output audit-results.json
 ```
 
+Only report high and critical vulnerabilities:
+
+```
+$ gem-audit check --severity high
+```
+
+Warn if the advisory database is older than 7 days:
+
+```
+$ gem-audit check --max-db-age 7
+```
+
+Fail in CI if the database is stale:
+
+```
+$ gem-audit check --max-db-age 7 --fail-on-stale
+```
+
+Treat parse/load warnings as errors:
+
+```
+$ gem-audit check --strict
+```
+
 ## Commands
 
 | Command    | Description                                              |
@@ -112,6 +140,19 @@ Running `gem-audit` with no subcommand is equivalent to `gem-audit check`.
 | `-G`, `--gemfile-lock <FILE>` | Path to the Gemfile.lock file            |
 | `-c`, `--config <FILE>`     | Configuration file (default: `.gem-audit.yml`) |
 | `-o`, `--output <FILE>`     | Write output to a file instead of stdout   |
+| `-S`, `--severity <LEVEL>`  | Minimum severity: `none`, `low`, `medium`, `high`, `critical` |
+| `--max-db-age <DAYS>`       | Warn if the advisory database is older than DAYS days |
+| `--fail-on-stale`           | Exit with code 3 if the database is stale  |
+| `--strict`                  | Treat parse/load warnings as errors (exit code 2) |
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0`  | No vulnerabilities found |
+| `1`  | Vulnerabilities found |
+| `2`  | Tool error (missing files, parse failures, `--strict` violations) |
+| `3`  | Advisory database is stale (`--fail-on-stale`) |
 
 ## Configuration File
 
@@ -122,9 +163,11 @@ gem-audit supports a per-project configuration file (`.gem-audit.yml`):
 ignore:
   - CVE-2020-1234
   - GHSA-xxxx-yyyy-zzzz
+max_db_age_days: 7
 ```
 
 * `ignore:` \[Array\<String\>\] - Advisory IDs to ignore (CVE, GHSA, or OSVDB).
+* `max_db_age_days:` \[Integer\] - Warn if the database is older than this many days. CLI `--max-db-age` overrides this value.
 
 The legacy `.bundler-audit.yml` file name is also supported for backward
 compatibility.

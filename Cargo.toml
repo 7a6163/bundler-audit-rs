@@ -1,6 +1,6 @@
 [package]
 name = "gem-audit"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2024"
 description = "Patch-level verification for Ruby Bundler dependencies"
 license = "MIT"

@@ -79,7 +79,7 @@ fn check_insecure_sources() {
                 .unwrap(),
         ])
         .assert()
-        .failure()
+        .code(1)
         .stdout(predicate::str::contains("Insecure Source URI found"));
 }
 
@@ -300,7 +300,7 @@ fn check_missing_gemfile_lock() {
             "/nonexistent/path/Gemfile.lock",
         ])
         .assert()
-        .failure()
+        .code(2)
         .stderr(predicate::str::is_empty().not());
 }
 

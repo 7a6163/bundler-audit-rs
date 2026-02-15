@@ -7,6 +7,8 @@ use thiserror::Error;
 pub struct Configuration {
     /// Advisory IDs to ignore during scanning.
     pub ignore: HashSet<String>,
+    /// Maximum database age in days before warning.
+    pub max_db_age_days: Option<u64>,
 }
 
 /// Errors that can occur when loading a configuration file.
@@ -112,7 +114,14 @@ impl Configuration {
             }
         }
 
-        Ok(Configuration { ignore })
+        let max_db_age_days = mapping
+            .get(serde_yaml::Value::String("max_db_age_days".to_string()))
+            .and_then(|v| v.as_u64());
+
+        Ok(Configuration {
+            ignore,
+            max_db_age_days,
+        })
     }
 }
 
@@ -209,6 +218,20 @@ mod tests {
         let config = Configuration::from_yaml(yaml).unwrap();
         assert_eq!(config.ignore.len(), 1);
         assert!(config.ignore.contains("OSVDB-89025"));
+    }
+
+    #[test]
+    fn parse_max_db_age_days() {
+        let yaml = "---\nmax_db_age_days: 7\n";
+        let config = Configuration::from_yaml(yaml).unwrap();
+        assert_eq!(config.max_db_age_days, Some(7));
+    }
+
+    #[test]
+    fn parse_config_without_max_db_age() {
+        let yaml = "---\nignore:\n- CVE-123\n";
+        let config = Configuration::from_yaml(yaml).unwrap();
+        assert_eq!(config.max_db_age_days, None);
     }
 
     #[test]

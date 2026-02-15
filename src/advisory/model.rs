@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::version::{Requirement, Version};
 
 /// The criticality level of a vulnerability.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
 pub enum Criticality {
     None,
     Low,

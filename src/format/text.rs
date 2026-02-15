@@ -7,8 +7,13 @@ use crate::scanner::Report;
 const RED: &str = "\x1b[31m";
 const GREEN: &str = "\x1b[32m";
 const YELLOW: &str = "\x1b[33m";
+const CYAN: &str = "\x1b[36m";
 const BOLD: &str = "\x1b[1m";
+const DIM: &str = "\x1b[2m";
 const RESET: &str = "\x1b[0m";
+
+/// Label column width (right-aligned).
+const LABEL_WIDTH: usize = 12;
 
 /// Print the scan report as human-readable text.
 pub fn print_text(
@@ -18,35 +23,106 @@ pub fn print_text(
     quiet: bool,
     use_color: bool,
 ) {
-    for source in &report.insecure_sources {
+    let total_sources = report.insecure_sources.len();
+    let total_gems = report.unpatched_gems.len();
+
+    for (i, source) in report.insecure_sources.iter().enumerate() {
         if use_color {
             writeln!(
                 output,
-                "{}Insecure Source URI found: {}{}",
-                YELLOW, source.source, RESET
+                "{}{}Insecure Source URI found:{} {}",
+                YELLOW, BOLD, RESET, source.source
             )
             .ok();
         } else {
             writeln!(output, "Insecure Source URI found: {}", source.source).ok();
         }
-        writeln!(output).ok();
+
+        if i < total_sources - 1 || !report.unpatched_gems.is_empty() {
+            writeln!(output).ok();
+        }
     }
 
-    for vuln in &report.unpatched_gems {
+    for (i, vuln) in report.unpatched_gems.iter().enumerate() {
         print_advisory(output, vuln, verbose, use_color);
+        if i < total_gems - 1 {
+            if use_color {
+                writeln!(output, "{}{}{}", DIM, "─".repeat(40), RESET).ok();
+            } else {
+                writeln!(output, "{}", "─".repeat(40)).ok();
+            }
+            writeln!(output).ok();
+        }
     }
 
     if report.vulnerable() {
+        // Summary line
+        let mut parts = Vec::new();
+        if total_sources > 0 {
+            parts.push(format!(
+                "{} insecure source{}",
+                total_sources,
+                if total_sources == 1 { "" } else { "s" }
+            ));
+        }
+        if total_gems > 0 {
+            parts.push(format!(
+                "{} unpatched gem{}",
+                total_gems,
+                if total_gems == 1 { "" } else { "s" }
+            ));
+        }
+        let summary = parts.join(", ");
+
+        writeln!(output).ok();
         if use_color {
-            writeln!(output, "{}Vulnerabilities found!{}", RED, RESET).ok();
+            writeln!(
+                output,
+                "{}{}Vulnerabilities found!{} ({})",
+                RED, BOLD, RESET, summary
+            )
+            .ok();
         } else {
-            writeln!(output, "Vulnerabilities found!").ok();
+            writeln!(output, "Vulnerabilities found! ({})", summary).ok();
         }
     } else if !quiet {
         if use_color {
-            writeln!(output, "{}No vulnerabilities found{}", GREEN, RESET).ok();
+            writeln!(output, "{}{}No vulnerabilities found{}", GREEN, BOLD, RESET).ok();
         } else {
             writeln!(output, "No vulnerabilities found").ok();
+        }
+    }
+
+    // Show warning counts if any errors occurred
+    if report.version_parse_errors > 0 || report.advisory_load_errors > 0 {
+        let mut warnings = Vec::new();
+        if report.version_parse_errors > 0 {
+            warnings.push(format!(
+                "{} version parse error{}",
+                report.version_parse_errors,
+                if report.version_parse_errors == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            ));
+        }
+        if report.advisory_load_errors > 0 {
+            warnings.push(format!(
+                "{} advisory load error{}",
+                report.advisory_load_errors,
+                if report.advisory_load_errors == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            ));
+        }
+        let msg = format!("Warnings: {}", warnings.join(", "));
+        if use_color {
+            writeln!(output, "{}{}{}{}", YELLOW, BOLD, msg, RESET).ok();
+        } else {
+            writeln!(output, "{}", msg).ok();
         }
     }
 }
@@ -71,38 +147,42 @@ fn print_advisory(
     }
 
     // Criticality
+    let crit_str = match adv.criticality() {
+        Some(Criticality::None) => "None",
+        Some(Criticality::Low) => "Low",
+        Some(Criticality::Medium) => "Medium",
+        Some(Criticality::High) => "High",
+        Some(Criticality::Critical) => "Critical",
+        None => "Unknown",
+    };
+
     if use_color {
-        write!(output, "{}Criticality: {}", RED, RESET).ok();
+        let colored_value = match adv.criticality() {
+            Some(Criticality::High) => format!("{}{}{}{}", RED, BOLD, crit_str, RESET),
+            Some(Criticality::Critical) => format!("{}{}{}{}", RED, BOLD, crit_str, RESET),
+            Some(Criticality::Medium) => format!("{}{}{}", YELLOW, crit_str, RESET),
+            _ => crit_str.to_string(),
+        };
+        writeln!(
+            output,
+            "{}{:>width$}:{} {}",
+            CYAN,
+            "Criticality",
+            RESET,
+            colored_value,
+            width = LABEL_WIDTH
+        )
+        .ok();
     } else {
-        write!(output, "Criticality: ").ok();
+        writeln!(
+            output,
+            "{:>width$}: {}",
+            "Criticality",
+            crit_str,
+            width = LABEL_WIDTH
+        )
+        .ok();
     }
-    match adv.criticality() {
-        Some(Criticality::None) => writeln!(output, "None"),
-        Some(Criticality::Low) => writeln!(output, "Low"),
-        Some(Criticality::Medium) => {
-            if use_color {
-                writeln!(output, "{}Medium{}", YELLOW, RESET)
-            } else {
-                writeln!(output, "Medium")
-            }
-        }
-        Some(Criticality::High) => {
-            if use_color {
-                writeln!(output, "{}{}High{}", RED, BOLD, RESET)
-            } else {
-                writeln!(output, "High")
-            }
-        }
-        Some(Criticality::Critical) => {
-            if use_color {
-                writeln!(output, "{}{}Critical{}", RED, BOLD, RESET)
-            } else {
-                writeln!(output, "Critical")
-            }
-        }
-        None => writeln!(output, "Unknown"),
-    }
-    .ok();
 
     if let Some(url) = &adv.url {
         label_value(output, "URL", url, use_color);
@@ -111,14 +191,21 @@ fn print_advisory(
     if verbose {
         if let Some(desc) = &adv.description {
             if use_color {
-                writeln!(output, "{}Description:{}", RED, RESET).ok();
+                writeln!(
+                    output,
+                    "{}{:>width$}:{}",
+                    CYAN,
+                    "Description",
+                    RESET,
+                    width = LABEL_WIDTH
+                )
+                .ok();
             } else {
-                writeln!(output, "Description:").ok();
+                writeln!(output, "{:>width$}:", "Description", width = LABEL_WIDTH).ok();
             }
             for line in desc.lines() {
-                writeln!(output, "  {}", line).ok();
+                writeln!(output, "{:>width$}  {}", "", line, width = LABEL_WIDTH).ok();
             }
-            writeln!(output).ok();
         }
     } else if let Some(title) = &adv.title {
         label_value(output, "Title", title, use_color);
@@ -132,23 +219,45 @@ fn print_advisory(
             .map(|v| format!("'{}'", v))
             .collect();
         if use_color {
-            write!(output, "{}Solution: upgrade to {}", RED, RESET).ok();
+            writeln!(
+                output,
+                "{}{:>width$}:{} upgrade to {}",
+                CYAN,
+                "Solution",
+                RESET,
+                versions.join(", "),
+                width = LABEL_WIDTH
+            )
+            .ok();
         } else {
-            write!(output, "Solution: upgrade to ").ok();
+            writeln!(
+                output,
+                "{:>width$}: upgrade to {}",
+                "Solution",
+                versions.join(", "),
+                width = LABEL_WIDTH
+            )
+            .ok();
         }
-        writeln!(output, "{}", versions.join(", ")).ok();
     } else if use_color {
-        write!(output, "{}Solution: {}", RED, RESET).ok();
         writeln!(
             output,
-            "{}{}remove or disable this gem until a patch is available!{}",
-            RED, BOLD, RESET
+            "{}{:>width$}:{} {}{}remove or disable this gem until a patch is available!{}",
+            CYAN,
+            "Solution",
+            RESET,
+            RED,
+            BOLD,
+            RESET,
+            width = LABEL_WIDTH
         )
         .ok();
     } else {
         writeln!(
             output,
-            "Solution: remove or disable this gem until a patch is available!"
+            "{:>width$}: remove or disable this gem until a patch is available!",
+            "Solution",
+            width = LABEL_WIDTH
         )
         .ok();
     }
@@ -158,9 +267,18 @@ fn print_advisory(
 
 fn label_value(output: &mut dyn Write, label: &str, value: &str, use_color: bool) {
     if use_color {
-        writeln!(output, "{}{}: {}{}", RED, label, RESET, value).ok();
+        writeln!(
+            output,
+            "{}{:>width$}:{} {}",
+            CYAN,
+            label,
+            RESET,
+            value,
+            width = LABEL_WIDTH
+        )
+        .ok();
     } else {
-        writeln!(output, "{}: {}", label, value).ok();
+        writeln!(output, "{:>width$}: {}", label, value, width = LABEL_WIDTH).ok();
     }
 }
 
@@ -177,6 +295,8 @@ mod tests {
                 source: "http://rubygems.org/".to_string(),
             }],
             unpatched_gems: vec![],
+            version_parse_errors: 0,
+            advisory_load_errors: 0,
         }
     }
 
@@ -190,6 +310,8 @@ mod tests {
                 version: "0.5.0".to_string(),
                 advisory,
             }],
+            version_parse_errors: 0,
+            advisory_load_errors: 0,
         }
     }
 
@@ -198,6 +320,8 @@ mod tests {
         let report = Report {
             insecure_sources: vec![],
             unpatched_gems: vec![],
+            version_parse_errors: 0,
+            advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
         print_text(&report, &mut buf, false, false, false);
@@ -210,6 +334,8 @@ mod tests {
         let report = Report {
             insecure_sources: vec![],
             unpatched_gems: vec![],
+            version_parse_errors: 0,
+            advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
         print_text(&report, &mut buf, false, true, false);
@@ -233,12 +359,14 @@ mod tests {
         let mut buf = Vec::new();
         print_text(&report, &mut buf, false, false, false);
         let output = String::from_utf8(buf).unwrap();
-        assert!(output.contains("Name: test"));
-        assert!(output.contains("Version: 0.5.0"));
-        assert!(output.contains("CVE: CVE-2020-1234"));
-        assert!(output.contains("GHSA: GHSA-aaaa-bbbb-cccc"));
+        assert!(output.contains("Name"));
+        assert!(output.contains("test"));
+        assert!(output.contains("Version"));
+        assert!(output.contains("0.5.0"));
+        assert!(output.contains("CVE-2020-1234"));
+        assert!(output.contains("GHSA-aaaa-bbbb-cccc"));
         assert!(output.contains("Critical"));
-        assert!(output.contains("Solution: upgrade to '>= 1.0.0'"));
+        assert!(output.contains("upgrade to '>= 1.0.0'"));
     }
 
     #[test]
@@ -252,13 +380,15 @@ mod tests {
                 version: "0.5.0".to_string(),
                 advisory,
             }],
+            version_parse_errors: 0,
+            advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
         print_text(&report, &mut buf, true, false, false);
         let output = String::from_utf8(buf).unwrap();
-        assert!(output.contains("Description:"));
+        assert!(output.contains("Description"));
         assert!(output.contains("Detailed description here."));
-        assert!(!output.contains("Title:"));
+        assert!(!output.contains("Title"));
     }
 
     #[test]

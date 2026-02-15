@@ -42,6 +42,10 @@ pub fn print_json(report: &Report, output: &mut dyn Write, pretty: bool) {
     let doc = json!({
         "version": env!("CARGO_PKG_VERSION"),
         "results": results,
+        "metadata": {
+            "version_parse_errors": report.version_parse_errors,
+            "advisory_load_errors": report.advisory_load_errors,
+        },
     });
 
     if pretty {
@@ -65,6 +69,8 @@ mod tests {
         let report = Report {
             insecure_sources: vec![],
             unpatched_gems: vec![],
+            version_parse_errors: 0,
+            advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
         print_json(&report, &mut buf, false);
@@ -81,6 +87,8 @@ mod tests {
                 source: "http://rubygems.org/".to_string(),
             }],
             unpatched_gems: vec![],
+            version_parse_errors: 0,
+            advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
         print_json(&report, &mut buf, false);
@@ -102,6 +110,8 @@ mod tests {
                 version: "0.5.0".to_string(),
                 advisory,
             }],
+            version_parse_errors: 0,
+            advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
         print_json(&report, &mut buf, true);
@@ -120,6 +130,8 @@ mod tests {
         let report = Report {
             insecure_sources: vec![],
             unpatched_gems: vec![],
+            version_parse_errors: 0,
+            advisory_load_errors: 0,
         };
 
         let mut pretty_buf = Vec::new();

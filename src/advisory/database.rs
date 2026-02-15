@@ -171,7 +171,7 @@ impl Database {
         if let Ok(entries) = std::fs::read_dir(&gems_dir) {
             for entry in entries.flatten() {
                 if entry.path().is_dir() {
-                    self.load_advisories_from_dir(&entry.path(), &mut results);
+                    let _ = self.load_advisories_from_dir(&entry.path(), &mut results);
                 }
             }
         }
@@ -181,24 +181,34 @@ impl Database {
 
     /// Get advisories for a specific gem.
     pub fn advisories_for(&self, gem_name: &str) -> Vec<Advisory> {
+        self.advisories_for_with_errors(gem_name).0
+    }
+
+    /// Get advisories for a specific gem, along with the count of load errors.
+    fn advisories_for_with_errors(&self, gem_name: &str) -> (Vec<Advisory>, usize) {
         let mut results = Vec::new();
         let gem_dir = self.path.join("gems").join(gem_name);
 
-        if gem_dir.is_dir() {
-            self.load_advisories_from_dir(&gem_dir, &mut results);
-        }
+        let errors = if gem_dir.is_dir() {
+            self.load_advisories_from_dir(&gem_dir, &mut results)
+        } else {
+            0
+        };
 
-        results
+        (results, errors)
     }
 
     /// Check a gem (name + version) against the database.
     ///
-    /// Returns all advisories that the gem version is vulnerable to.
-    pub fn check_gem(&self, gem_name: &str, version: &Version) -> Vec<Advisory> {
-        self.advisories_for(gem_name)
+    /// Returns all advisories that the gem version is vulnerable to,
+    /// along with the count of advisory files that failed to load.
+    pub fn check_gem(&self, gem_name: &str, version: &Version) -> (Vec<Advisory>, usize) {
+        let (advisories, errors) = self.advisories_for_with_errors(gem_name);
+        let vulnerable = advisories
             .into_iter()
             .filter(|advisory| advisory.vulnerable(version))
-            .collect()
+            .collect();
+        (vulnerable, errors)
     }
 
     /// Total number of advisories in the database.
@@ -226,7 +236,10 @@ impl Database {
     }
 
     /// Load all advisory YAML files from a gem directory.
-    fn load_advisories_from_dir(&self, dir: &Path, results: &mut Vec<Advisory>) {
+    ///
+    /// Returns the number of files that failed to load.
+    fn load_advisories_from_dir(&self, dir: &Path, results: &mut Vec<Advisory>) -> usize {
+        let mut errors = 0;
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -235,11 +248,13 @@ impl Database {
                         Ok(advisory) => results.push(advisory),
                         Err(e) => {
                             eprintln!("warning: failed to load advisory {}: {}", path.display(), e);
+                            errors += 1;
                         }
                     }
                 }
             }
         }
+        errors
     }
 }
 
@@ -326,7 +341,7 @@ mod tests {
         if let Some(db) = local_db() {
             // Rails 3.2.10 is known to have vulnerabilities
             let version = Version::parse("3.2.10").unwrap();
-            let vulnerabilities = db.check_gem("activerecord", &version);
+            let (vulnerabilities, _errors) = db.check_gem("activerecord", &version);
             assert!(
                 !vulnerabilities.is_empty(),
                 "expected activerecord 3.2.10 to have vulnerabilities"
@@ -338,7 +353,7 @@ mod tests {
     fn check_nonexistent_gem() {
         if let Some(db) = local_db() {
             let version = Version::parse("1.0.0").unwrap();
-            let vulnerabilities = db.check_gem("nonexistent-gem-xyz", &version);
+            let (vulnerabilities, _errors) = db.check_gem("nonexistent-gem-xyz", &version);
             assert!(vulnerabilities.is_empty());
         }
     }
@@ -366,11 +381,11 @@ mod tests {
         assert_eq!(advisories[0].id, "CVE-2020-1234");
 
         // Check vulnerable version
-        let vulns = db.check_gem("test", &Version::parse("0.1.0").unwrap());
+        let (vulns, _errors) = db.check_gem("test", &Version::parse("0.1.0").unwrap());
         assert_eq!(vulns.len(), 1);
 
         // Check patched version
-        let vulns = db.check_gem("test", &Version::parse("1.0.0").unwrap());
+        let (vulns, _errors) = db.check_gem("test", &Version::parse("1.0.0").unwrap());
         assert!(vulns.is_empty());
 
         // Cleanup

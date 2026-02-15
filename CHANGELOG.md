@@ -1,3 +1,25 @@
+### 2.1.0 / 2026-02-15
+
+#### Added
+
+* **Semantic exit codes.** Exit code `0` = no vulnerabilities, `1` =
+  vulnerabilities found, `2` = tool error, `3` = stale database. Previously
+  all failures used exit code 1.
+* **Severity threshold** (`--severity` / `-S`). Only report advisories at or
+  above the given level (`none`, `low`, `medium`, `high`, `critical`).
+  Advisories without a CVSS score are excluded when a threshold is set.
+* **Database staleness warning** (`--max-db-age <DAYS>`). Warns on stderr
+  when the advisory database is older than the specified number of days.
+  Combine with `--fail-on-stale` to exit with code 3.
+  Also configurable via `max_db_age_days` in `.gem-audit.yml`.
+* **Strict mode** (`--strict`). Treats version parse errors and advisory
+  load failures as errors (exit code 2). Without this flag, they are
+  silently skipped as before.
+* Text output now shows a warnings summary line when version parse errors
+  or advisory load errors occur (e.g., "Warnings: 3 version parse errors").
+* JSON output now includes a `metadata` object with `version_parse_errors`
+  and `advisory_load_errors` counts.
+
 ### 2.0.0 / 2026-02-13
 
 #### Changed

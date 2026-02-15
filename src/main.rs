@@ -2,15 +2,21 @@ use std::collections::HashSet;
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process;
+use std::time::SystemTime;
 
 use clap::{Parser, Subcommand};
 
-use gem_audit::advisory::Database;
+use gem_audit::advisory::{Criticality, Database};
 use gem_audit::configuration::Configuration;
 use gem_audit::format::{self, OutputFormat};
 use gem_audit::scanner::{ScanOptions, Scanner};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+const EXIT_SUCCESS: i32 = 0;
+const EXIT_VULNERABLE: i32 = 1;
+const EXIT_ERROR: i32 = 2;
+const EXIT_STALE: i32 = 3;
 
 #[derive(Parser)]
 #[command(
@@ -66,6 +72,22 @@ enum Commands {
         /// Output file (default: stdout)
         #[arg(short, long)]
         output: Option<String>,
+
+        /// Minimum severity level to report (none, low, medium, high, critical)
+        #[arg(short = 'S', long, value_enum)]
+        severity: Option<Criticality>,
+
+        /// Maximum advisory database age in days before warning
+        #[arg(long)]
+        max_db_age: Option<u64>,
+
+        /// Exit with code 3 if the advisory database is stale
+        #[arg(long)]
+        fail_on_stale: bool,
+
+        /// Treat parse/load warnings as errors (exit code 2)
+        #[arg(long)]
+        strict: bool,
     },
 
     /// Update the ruby-advisory-db
@@ -104,7 +126,7 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
-    match cli.command {
+    let code = match cli.command {
         Some(Commands::Check {
             dir,
             quiet,
@@ -116,6 +138,10 @@ fn main() {
             gemfile_lock,
             config,
             output,
+            severity,
+            max_db_age,
+            fail_on_stale,
+            strict,
         }) => cmd_check(
             &dir,
             quiet,
@@ -127,18 +153,17 @@ fn main() {
             &gemfile_lock,
             &config,
             output.as_deref(),
+            severity,
+            max_db_age,
+            fail_on_stale,
+            strict,
         ),
-        Some(Commands::Update { quiet, database }) => {
-            cmd_update(quiet, database.as_deref());
-        }
-        Some(Commands::Download { quiet, database }) => {
-            cmd_download(quiet, database.as_deref());
-        }
-        Some(Commands::Stats { database }) => {
-            cmd_stats(database.as_deref());
-        }
+        Some(Commands::Update { quiet, database }) => cmd_update(quiet, database.as_deref()),
+        Some(Commands::Download { quiet, database }) => cmd_download(quiet, database.as_deref()),
+        Some(Commands::Stats { database }) => cmd_stats(database.as_deref()),
         Some(Commands::Version) => {
             println!("gem-audit {}", VERSION);
+            EXIT_SUCCESS
         }
         None => {
             // Default command is check (like Ruby bundler-audit's behavior)
@@ -153,8 +178,16 @@ fn main() {
                 "Gemfile.lock",
                 Configuration::DEFAULT_FILE,
                 None,
-            );
+                None,
+                None,
+                false,
+                false,
+            )
         }
+    };
+
+    if code != EXIT_SUCCESS {
+        process::exit(code);
     }
 }
 
@@ -176,11 +209,15 @@ fn cmd_check(
     gemfile_lock: &str,
     config_file: &str,
     output_file: Option<&str>,
-) {
+    severity: Option<Criticality>,
+    max_db_age: Option<u64>,
+    fail_on_stale: bool,
+    strict: bool,
+) -> i32 {
     let dir = Path::new(dir);
     if !dir.is_dir() {
         eprintln!("No such file or directory: {}", dir.display());
-        process::exit(1);
+        return EXIT_ERROR;
     }
 
     // Load configuration file (relative to project dir)
@@ -193,7 +230,7 @@ fn cmd_check(
         Ok(c) => c,
         Err(e) => {
             eprintln!("{}", e);
-            process::exit(1);
+            return EXIT_ERROR;
         }
     };
 
@@ -212,7 +249,7 @@ fn cmd_check(
             }
             Err(e) => {
                 eprintln!("Failed to download advisory database: {}", e);
-                process::exit(1);
+                return EXIT_ERROR;
             }
         }
     } else if update {
@@ -233,7 +270,7 @@ fn cmd_check(
             }
             Err(e) => {
                 eprintln!("Failed to update advisory database: {}", e);
-                process::exit(1);
+                return EXIT_ERROR;
             }
         }
     }
@@ -242,16 +279,36 @@ fn cmd_check(
         Ok(db) => db,
         Err(e) => {
             eprintln!("Failed to open advisory database: {}", e);
-            process::exit(1);
+            return EXIT_ERROR;
         }
     };
+
+    // Check database staleness (CLI --max-db-age overrides config)
+    let effective_max_age = max_db_age.or(config.max_db_age_days);
+    let mut stale = false;
+    if let Some(max_days) = effective_max_age
+        && let Some(last_updated) = db.last_updated_at()
+    {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let age_days = (now - last_updated) / 86400;
+        if age_days > max_days as i64 {
+            stale = true;
+            eprintln!(
+                "warning: advisory database is {} days old (max: {} days)",
+                age_days, max_days
+            );
+        }
+    }
 
     let lockfile_path = dir.join(gemfile_lock);
     let scanner = match Scanner::new(&lockfile_path, db) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("{}", e);
-            process::exit(1);
+            return EXIT_ERROR;
         }
     };
 
@@ -262,7 +319,11 @@ fn cmd_check(
         config.ignore
     };
 
-    let options = ScanOptions { ignore: ignore_set };
+    let options = ScanOptions {
+        ignore: ignore_set,
+        severity,
+        strict,
+    };
 
     let report = scanner.scan(&options);
 
@@ -274,7 +335,7 @@ fn cmd_check(
             Ok(f) => Box::new(f),
             Err(e) => {
                 eprintln!("Failed to open output file {}: {}", path, e);
-                process::exit(1);
+                return EXIT_ERROR;
             }
         }
     } else {
@@ -292,16 +353,25 @@ fn cmd_check(
     }
 
     if report.vulnerable() {
-        process::exit(1);
+        return EXIT_VULNERABLE;
     }
+
+    if strict && (report.version_parse_errors > 0 || report.advisory_load_errors > 0) {
+        return EXIT_ERROR;
+    }
+
+    if stale && fail_on_stale {
+        return EXIT_STALE;
+    }
+
+    EXIT_SUCCESS
 }
 
-fn cmd_update(quiet: bool, database: Option<&str>) {
+fn cmd_update(quiet: bool, database: Option<&str>) -> i32 {
     let db_path = resolve_db_path(database);
 
     if !db_path.is_dir() || !db_path.join("gems").is_dir() {
-        cmd_download(quiet, database);
-        return;
+        return cmd_download(quiet, database);
     }
 
     if !quiet {
@@ -312,7 +382,7 @@ fn cmd_update(quiet: bool, database: Option<&str>) {
         Ok(db) => db,
         Err(e) => {
             eprintln!("Failed to open advisory database: {}", e);
-            process::exit(1);
+            return EXIT_ERROR;
         }
     };
 
@@ -329,21 +399,23 @@ fn cmd_update(quiet: bool, database: Option<&str>) {
         }
         Err(e) => {
             eprintln!("Failed to update: {}", e);
-            process::exit(1);
+            return EXIT_ERROR;
         }
     }
 
     if !quiet {
         print_stats(&db);
     }
+
+    EXIT_SUCCESS
 }
 
-fn cmd_download(quiet: bool, database: Option<&str>) {
+fn cmd_download(quiet: bool, database: Option<&str>) -> i32 {
     let db_path = resolve_db_path(database);
 
     if db_path.is_dir() && db_path.join("gems").is_dir() {
         eprintln!("Database already exists");
-        return;
+        return EXIT_SUCCESS;
     }
 
     if !quiet {
@@ -355,26 +427,28 @@ fn cmd_download(quiet: bool, database: Option<&str>) {
             if !quiet {
                 print_stats(&db);
             }
+            EXIT_SUCCESS
         }
         Err(e) => {
             eprintln!("Failed to download: {}", e);
-            process::exit(1);
+            EXIT_ERROR
         }
     }
 }
 
-fn cmd_stats(database: Option<&str>) {
+fn cmd_stats(database: Option<&str>) -> i32 {
     let db_path = resolve_db_path(database);
 
     let db = match Database::open(&db_path) {
         Ok(db) => db,
         Err(e) => {
             eprintln!("Failed to open advisory database: {}", e);
-            process::exit(1);
+            return EXIT_ERROR;
         }
     };
 
     print_stats(&db);
+    EXIT_SUCCESS
 }
 
 fn print_stats(db: &Database) {
