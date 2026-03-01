@@ -51,6 +51,11 @@ impl Database {
 
     /// Download the ruby-advisory-db to the given path.
     pub fn download(path: &Path, _quiet: bool) -> Result<Self, DatabaseError> {
+        // Ensure the parent directory exists; gix does not create it automatically.
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(DatabaseError::Io)?;
+        }
+
         let (mut checkout, _outcome) = gix::prepare_clone(ADVISORY_DB_URL, path)
             .map_err(|e| DatabaseError::DownloadFailed(e.to_string()))?
             .fetch_then_checkout(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)

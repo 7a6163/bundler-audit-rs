@@ -1,3 +1,16 @@
+### 2.3.3 / 2026-03-01
+
+#### Fixed
+
+* `download()` now calls `create_dir_all` on the parent directory before
+  cloning, preventing failures when the default path (`/root/.local/share/`)
+  does not exist in the container.
+* Docker image default `GEM_AUDIT_DB` changed from `~/.local/share/ruby-advisory-db`
+  to `/db`, a pre-created writable directory in the image that works without
+  any volume mount or environment override.
+
+---
+
 ### 2.3.2 / 2026-03-01
 
 #### Fixed

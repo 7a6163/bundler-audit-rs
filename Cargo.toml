@@ -1,6 +1,6 @@
 [package]
 name = "gem-audit"
-version = "2.3.2"
+version = "2.3.3"
 edition = "2024"
 description = "Fast, standalone security auditor for Gemfile.lock"
 license = "MIT"
