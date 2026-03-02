@@ -319,8 +319,9 @@ $ docker build -t gem-audit .
 $ docker run --rm -v $(pwd):/workspace gem-audit check
 ```
 
-The image uses `gcr.io/distroless/cc-debian13` as the runtime base and
-pre-downloads the [ruby-advisory-db] at build time for fast offline scans.
+The image uses `gcr.io/distroless/cc-debian13:debug` as the runtime base.
+The advisory database is downloaded on first run and stored in `/db` inside
+the container. Mount a volume or use a CI cache to persist it across runs.
 
 ### CI Examples
 
@@ -382,12 +383,11 @@ jobs:
 
 Benchmarked with [hyperfine] on Apple M-series, comparing against Ruby bundler-audit 0.9.2:
 
-| Benchmark | Rust | Ruby | Speedup |
-|-----------|------|------|---------|
-| check (unpatched gems) | 9.9 ms | 229.9 ms | **23x** |
-| check (secure, no vulns) | 17.9 ms | 262.5 ms | **15x** |
-| check --format json | 10.3 ms | 231.3 ms | **23x** |
-| startup (version) | 6.8 ms | 198.4 ms | **29x** |
+| Benchmark | gem-audit (Rust) | bundler-audit (Ruby) | Speedup |
+|-----------|-----------------|----------------------|---------|
+| check (unpatched gems) | 7.0 ms | 216.5 ms | **~31x** |
+| check (secure, no vulns) | 16.6 ms | 250.2 ms | **~15x** |
+| startup (`version`) | 4.6 ms | 188.4 ms | **~41x** |
 
 Run the benchmark yourself:
 
@@ -424,12 +424,12 @@ Both use the same [ruby-advisory-db] and produce equivalent output.
 | Backward-compatible config | `.bundler-audit.yml` supported | — |
 | Rake integration | No | Yes |
 | GitHub Action | [gem-audit-action] | Community actions |
-| Performance | ~10 ms | ~230 ms |
+| Performance | ~7–17 ms | ~190–250 ms |
 
 ### Why choose gem-audit?
 
 * **Zero dependencies** -- no Ruby, Bundler, or Git required. Drop a single binary into any CI image.
-* **15-29x faster** -- finishes in milliseconds, ideal for pre-commit hooks and fast CI pipelines.
+* **15-41x faster** -- finishes in milliseconds, ideal for pre-commit hooks and fast CI pipelines.
 * **Ruby version scanning** -- checks the interpreter version against CVEs, built-in (no extra gem like [ruby_audit] needed).
 * **Severity filtering** -- only fail on `high` or `critical` vulnerabilities with `--severity`.
 * **Database freshness** -- `--max-db-age` and `--fail-on-stale` ensure your advisory data is never outdated.
