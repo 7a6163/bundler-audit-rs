@@ -267,6 +267,8 @@ fn parse_gem_spec_line(trimmed: &str, source_index: usize) -> Option<GemSpec> {
 fn parse_version_platform(input: &str) -> (String, Option<String>) {
     // Known platform patterns that appear after a hyphen in gem versions
     let platform_patterns = [
+        "x86_64-linux-gnu",
+        "x86_64-linux-musl",
         "x86_64-linux",
         "x86_64-darwin",
         "x86-linux",
@@ -275,7 +277,11 @@ fn parse_version_platform(input: &str) -> (String, Option<String>) {
         "x64-mingw32",
         "x64-mingw-ucrt",
         "arm64-darwin",
+        "aarch64-linux-gnu",
+        "aarch64-linux-musl",
         "aarch64-linux",
+        "arm-linux-gnu",
+        "arm-linux-musl",
         "arm-linux",
         "java",
         "jruby",
@@ -292,12 +298,10 @@ fn parse_version_platform(input: &str) -> (String, Option<String>) {
         }
     }
 
-    // Fallback: heuristic — find the last hyphen where the part after it
-    // contains non-numeric characters (likely a platform)
-    // But only if the part after doesn't look like a pre-release version segment
-    if let Some(pos) = input.rfind('-') {
+    // Fallback: heuristic — try each hyphen position (left to right) and check
+    // if the suffix looks like a platform identifier.
+    for (pos, _) in input.match_indices('-') {
         let after = &input[pos + 1..];
-        // If after contains a known arch prefix, it's a platform
         if after.starts_with("x86")
             || after.starts_with("x64")
             || after.starts_with("arm")
@@ -307,8 +311,6 @@ fn parse_version_platform(input: &str) -> (String, Option<String>) {
             || after.starts_with("universal")
             || after.contains("mingw")
             || after.contains("mswin")
-            || after.contains("linux")
-            || after.contains("darwin")
         {
             return (input[..pos].to_string(), Some(after.to_string()));
         }
@@ -579,6 +581,27 @@ mod tests {
         let (v, p) = parse_version_platform("1.13.10-arm64-darwin");
         assert_eq!(v, "1.13.10");
         assert_eq!(p, Some("arm64-darwin".to_string()));
+    }
+
+    #[test]
+    fn parse_version_platform_musl() {
+        let (v, p) = parse_version_platform("1.19.1-aarch64-linux-musl");
+        assert_eq!(v, "1.19.1");
+        assert_eq!(p, Some("aarch64-linux-musl".to_string()));
+    }
+
+    #[test]
+    fn parse_version_platform_x86_musl() {
+        let (v, p) = parse_version_platform("1.19.1-x86_64-linux-musl");
+        assert_eq!(v, "1.19.1");
+        assert_eq!(p, Some("x86_64-linux-musl".to_string()));
+    }
+
+    #[test]
+    fn parse_version_platform_gnu() {
+        let (v, p) = parse_version_platform("1.19.1-x86_64-linux-gnu");
+        assert_eq!(v, "1.19.1");
+        assert_eq!(p, Some("x86_64-linux-gnu".to_string()));
     }
 
     // ========== Dependency Line Parsing ==========

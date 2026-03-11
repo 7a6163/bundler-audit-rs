@@ -269,7 +269,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: 7a6163/gem-audit-action@v1
 ```
 
@@ -302,7 +302,7 @@ Only fail on high and critical vulnerabilities:
           output: audit-report.json
         continue-on-error: true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: audit-report
           path: audit-report.json

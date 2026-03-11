@@ -1,3 +1,26 @@
+### 2.4.0 / 2026-03-11
+
+#### Fixed
+
+* **False positive on platform-suffixed gem versions.** Versions like
+  `1.19.1-aarch64-linux-musl` were not correctly split into version and
+  platform, causing the version to be treated as a pre-release and
+  incorrectly flagged as vulnerable even when it satisfied `patched_versions`.
+* Added `musl` and `gnu` libc variants (`aarch64-linux-musl`,
+  `x86_64-linux-musl`, `aarch64-linux-gnu`, `x86_64-linux-gnu`,
+  `arm-linux-musl`, `arm-linux-gnu`) to the known platform patterns.
+* Improved platform heuristic fallback to scan all hyphen positions
+  (left-to-right) instead of only the last one, so multi-segment platforms
+  like `aarch64-linux-musl` are correctly detected.
+
+#### CI
+
+* Updated GitHub Actions from Node.js 20 to Node.js 24-compatible versions:
+  `actions/checkout` v4 → v5, `actions/upload-artifact` v4 → v5,
+  `actions/download-artifact` v4 → v5.
+
+---
+
 ### 2.3.3 / 2026-03-01
 
 #### Fixed
