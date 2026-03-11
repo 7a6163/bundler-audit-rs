@@ -16,8 +16,8 @@
 #### CI
 
 * Updated GitHub Actions from Node.js 20 to Node.js 24-compatible versions:
-  `actions/checkout` v4 → v5, `actions/upload-artifact` v4 → v5,
-  `actions/download-artifact` v4 → v5.
+  `actions/checkout` v4 → v5, `actions/upload-artifact` v4 → v7,
+  `actions/download-artifact` v4 → v8, `codecov/codecov-action` v4 → v5.
 
 ---
 

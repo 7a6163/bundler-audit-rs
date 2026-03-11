@@ -302,7 +302,7 @@ Only fail on high and critical vulnerabilities:
           output: audit-report.json
         continue-on-error: true
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: audit-report
           path: audit-report.json
