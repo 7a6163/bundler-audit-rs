@@ -63,6 +63,25 @@ impl VersionConstraint {
     }
 }
 
+impl VersionConstraint {
+    /// Return the minimum version that satisfies this single constraint, if one exists.
+    ///
+    /// - `>= X` → `X`
+    /// - `> X`  → `X` with last segment incremented
+    /// - `~> X` → `X`
+    /// - `= X`  → `X`
+    /// - `<=`, `<`, `!=` → `None` (upper bounds / exclusions have no lower bound)
+    pub fn minimum_version(&self) -> Option<Version> {
+        match &self.operator {
+            Operator::GreaterThanOrEqual | Operator::Pessimistic | Operator::Equal => {
+                Some(self.version.clone())
+            }
+            Operator::GreaterThan => Some(self.version.increment_last()),
+            Operator::LessThan | Operator::LessThanOrEqual | Operator::NotEqual => None,
+        }
+    }
+}
+
 impl fmt::Display for VersionConstraint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {}", self.operator, self.version)
@@ -144,6 +163,38 @@ impl Requirement {
     /// Check if the given version satisfies all constraints in this requirement.
     pub fn satisfied_by(&self, version: &Version) -> bool {
         self.constraints.iter().all(|c| c.satisfied_by(version))
+    }
+
+    /// Compute the minimum version that satisfies all constraints in this requirement.
+    ///
+    /// Takes the maximum of all lower bounds, then verifies it passes all upper bounds
+    /// and exclusions. If a `!=` excludes the candidate, tries incrementing the last segment.
+    pub fn minimum_version(&self) -> Option<Version> {
+        // Collect lower-bound candidates
+        let mut candidate: Option<Version> = None;
+        for c in &self.constraints {
+            if let Some(v) = c.minimum_version() {
+                candidate = Some(match candidate {
+                    Some(cur) if v > cur => v,
+                    Some(cur) => cur,
+                    None => v,
+                });
+            }
+        }
+
+        // If no lower bound found, requirement is pure upper-bound (e.g. "< 2.0")
+        let mut candidate = candidate?;
+
+        // Verify candidate satisfies all constraints; handle != by incrementing
+        for _ in 0..100 {
+            if self.satisfied_by(&candidate) {
+                return Some(candidate);
+            }
+            // If blocked by !=, try next patch
+            candidate = candidate.increment_last();
+        }
+
+        None
     }
 }
 

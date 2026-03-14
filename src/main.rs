@@ -8,6 +8,7 @@ use clap::{Parser, Subcommand};
 
 use gem_audit::advisory::{Criticality, Database};
 use gem_audit::configuration::Configuration;
+use gem_audit::fixer::{self, FixResult};
 use gem_audit::format::{self, OutputFormat};
 use gem_audit::scanner::{ScanOptions, Scanner};
 use gem_audit::util::format_timestamp;
@@ -90,9 +91,13 @@ enum Commands {
         #[arg(long)]
         strict: bool,
 
-        /// Show remediation suggestions for vulnerable gems
+        /// Fix vulnerable gem versions in Gemfile.lock
         #[arg(long)]
         fix: bool,
+
+        /// Preview fix changes without writing (use with --fix)
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// Update the ruby-advisory-db
@@ -148,6 +153,7 @@ fn main() {
             fail_on_stale,
             strict,
             fix,
+            dry_run,
         }) => cmd_check(
             &dir,
             quiet,
@@ -164,6 +170,7 @@ fn main() {
             fail_on_stale,
             strict,
             fix,
+            dry_run,
         ),
         Some(Commands::Update { quiet, database }) => cmd_update(quiet, database.as_deref()),
         Some(Commands::Download { quiet, database }) => cmd_download(quiet, database.as_deref()),
@@ -187,6 +194,7 @@ fn main() {
                 None,
                 None,
                 None,
+                false,
                 false,
                 false,
                 false,
@@ -222,6 +230,7 @@ fn cmd_check(
     fail_on_stale: bool,
     strict: bool,
     fix: bool,
+    dry_run: bool,
 ) -> i32 {
     let dir = Path::new(dir);
     if !dir.is_dir() {
@@ -351,10 +360,26 @@ fn cmd_check(
         Box::new(stdout.lock())
     };
 
+    // Resolve fixes if --fix is requested
+    let fix_results = if fix && !report.unpatched_gems.is_empty() {
+        let remediations = report.remediations();
+        Some(fixer::resolve_fixes(&remediations))
+    } else {
+        None
+    };
+
     match output_format {
         OutputFormat::Text => {
             let use_color = output_file.is_none() && is_tty;
-            format::print_text(&report, &mut output_handle, verbose, quiet, use_color, fix);
+            format::print_text(
+                &report,
+                &mut output_handle,
+                verbose,
+                quiet,
+                use_color,
+                fix,
+                fix_results.as_deref(),
+            );
         }
         OutputFormat::Json => {
             format::print_json(
@@ -362,7 +387,64 @@ fn cmd_check(
                 &mut output_handle,
                 is_tty && output_file.is_none(),
                 fix,
+                fix_results.as_deref(),
             );
+        }
+    }
+
+    // Apply fixes to Gemfile.lock
+    if fix && !dry_run
+        && let Some(ref results) = fix_results
+    {
+        let fixes: Vec<&fixer::FixSuggestion> = results
+            .iter()
+            .filter_map(|r| match r {
+                FixResult::Fixed(f) => Some(f),
+                _ => None,
+            })
+            .collect();
+
+        if !fixes.is_empty() {
+            let owned_fixes: Vec<fixer::FixSuggestion> = fixes
+                .iter()
+                .map(|f| fixer::FixSuggestion {
+                    name: f.name.clone(),
+                    current_version: f.current_version.clone(),
+                    resolved_version: f.resolved_version.clone(),
+                    advisory_ids: f.advisory_ids.clone(),
+                })
+                .collect();
+
+            match std::fs::read_to_string(&lockfile_path) {
+                Ok(content) => {
+                    let (patched, patched_names) =
+                        fixer::patch_lockfile(&content, &owned_fixes);
+                    if !patched_names.is_empty() {
+                        // Atomic write: write to tmp file then rename
+                        let tmp_path = lockfile_path.with_extension("lock.tmp");
+                        match std::fs::write(&tmp_path, &patched) {
+                            Ok(()) => {
+                                if let Err(e) = std::fs::rename(&tmp_path, &lockfile_path) {
+                                    eprintln!("error: failed to write Gemfile.lock: {}", e);
+                                    let _ = std::fs::remove_file(&tmp_path);
+                                } else {
+                                    eprintln!(
+                                        "\nFixed {} gem(s) in {}. Run `bundle install` to install the updated versions.",
+                                        patched_names.len(),
+                                        lockfile_path.display()
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("error: failed to write temporary file: {}", e);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("error: failed to read {}: {}", lockfile_path.display(), e);
+                }
+            }
         }
     }
 

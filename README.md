@@ -5,7 +5,7 @@
 [![Crates.io](https://img.shields.io/crates/v/gem-audit)](https://crates.io/crates/gem-audit)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.md)
 
-Fast, standalone security auditor for [Bundler] dependencies, rewritten in Rust.
+Ultra-fast, standalone security auditor for [Bundler] dependencies, written in Rust.
 
 A security auditor for `Gemfile.lock` inspired by [bundler-audit], compiled to a
 single static binary with zero runtime dependencies -- no Ruby, no Bundler, no

@@ -52,6 +52,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
 
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-audit
+      - run: cargo audit
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
