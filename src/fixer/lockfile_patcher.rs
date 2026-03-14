@@ -87,10 +87,7 @@ fn try_patch_spec_line(line: &str, fixes: &[FixSuggestion]) -> Option<String> {
 
     // Reconstruct the line preserving original indentation
     let indent = &line[..line.len() - line.trim_start().len()];
-    Some(format!(
-        "{}{} ({})",
-        indent, gem_name, new_version_platform
-    ))
+    Some(format!("{}{} ({})", indent, gem_name, new_version_platform))
 }
 
 /// Split "1.13.10-x86_64-linux" into ("1.13.10", Some("x86_64-linux")).

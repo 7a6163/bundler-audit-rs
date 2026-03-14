@@ -81,7 +81,11 @@ pub fn print_json(
                         "advisories": f.advisory_ids,
                         "status": "fixed",
                     }),
-                    FixResult::Unresolvable { name, current_version, advisory_ids } => json!({
+                    FixResult::Unresolvable {
+                        name,
+                        current_version,
+                        advisory_ids,
+                    } => json!({
                         "gem": name,
                         "current_version": current_version,
                         "resolved_version": null,

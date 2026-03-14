@@ -96,7 +96,10 @@ fn resolve_single(remediation: &Remediation) -> FixResult {
 
 /// Check if a version is patched against ALL advisories for a gem.
 fn all_advisories_patched(remediation: &Remediation, version: &Version) -> bool {
-    remediation.advisories.iter().all(|adv| adv.patched(version))
+    remediation
+        .advisories
+        .iter()
+        .all(|adv| adv.patched(version))
 }
 
 #[cfg(test)]
@@ -119,9 +122,8 @@ mod tests {
 
     #[test]
     fn single_advisory_gte() {
-        let adv = make_advisory(
-            "---\ngem: test\ncve: 2020-0001\npatched_versions:\n  - \">= 1.0.0\"\n",
-        );
+        let adv =
+            make_advisory("---\ngem: test\ncve: 2020-0001\npatched_versions:\n  - \">= 1.0.0\"\n");
         let rem = make_remediation("test", "0.5.0", vec![adv]);
         let results = resolve_fixes(&[rem]);
         assert_eq!(results.len(), 1);
@@ -135,9 +137,8 @@ mod tests {
 
     #[test]
     fn single_advisory_pessimistic() {
-        let adv = make_advisory(
-            "---\ngem: test\ncve: 2020-0001\npatched_versions:\n  - \"~> 1.18.7\"\n",
-        );
+        let adv =
+            make_advisory("---\ngem: test\ncve: 2020-0001\npatched_versions:\n  - \"~> 1.18.7\"\n");
         let rem = make_remediation("test", "1.18.0", vec![adv]);
         let results = resolve_fixes(&[rem]);
         match &results[0] {
@@ -150,9 +151,8 @@ mod tests {
 
     #[test]
     fn single_advisory_gt() {
-        let adv = make_advisory(
-            "---\ngem: test\ncve: 2020-0001\npatched_versions:\n  - \"> 1.0.0\"\n",
-        );
+        let adv =
+            make_advisory("---\ngem: test\ncve: 2020-0001\npatched_versions:\n  - \"> 1.0.0\"\n");
         let rem = make_remediation("test", "0.5.0", vec![adv]);
         let results = resolve_fixes(&[rem]);
         match &results[0] {
@@ -184,12 +184,10 @@ mod tests {
         // advisory1: patched >= 1.5
         // advisory2: patched >= 2.0
         // AND → need >= 2.0
-        let adv1 = make_advisory(
-            "---\ngem: test\ncve: 2020-0001\npatched_versions:\n  - \">= 1.5\"\n",
-        );
-        let adv2 = make_advisory(
-            "---\ngem: test\ncve: 2020-0002\npatched_versions:\n  - \">= 2.0\"\n",
-        );
+        let adv1 =
+            make_advisory("---\ngem: test\ncve: 2020-0001\npatched_versions:\n  - \">= 1.5\"\n");
+        let adv2 =
+            make_advisory("---\ngem: test\ncve: 2020-0002\npatched_versions:\n  - \">= 2.0\"\n");
         let rem = make_remediation("test", "1.0.0", vec![adv1, adv2]);
         let results = resolve_fixes(&[rem]);
         match &results[0] {
@@ -202,8 +200,7 @@ mod tests {
 
     #[test]
     fn no_patched_versions_is_unresolvable() {
-        let adv =
-            make_advisory("---\ngem: test\ncve: 2020-0001\npatched_versions: []\n");
+        let adv = make_advisory("---\ngem: test\ncve: 2020-0001\npatched_versions: []\n");
         let rem = make_remediation("test", "1.0.0", vec![adv]);
         let results = resolve_fixes(&[rem]);
         assert!(matches!(&results[0], FixResult::Unresolvable { .. }));
@@ -225,9 +222,8 @@ mod tests {
         let adv1 = make_advisory(
             "---\ngem: test\ncve: 2020-0001\npatched_versions:\n  - \"~> 4.2.5\"\n  - \">= 5.0.0\"\n",
         );
-        let adv2 = make_advisory(
-            "---\ngem: test\ncve: 2020-0002\npatched_versions:\n  - \">= 5.0.1\"\n",
-        );
+        let adv2 =
+            make_advisory("---\ngem: test\ncve: 2020-0002\npatched_versions:\n  - \">= 5.0.1\"\n");
         let rem = make_remediation("test", "4.2.0", vec![adv1, adv2]);
         let results = resolve_fixes(&[rem]);
         match &results[0] {

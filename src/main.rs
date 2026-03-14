@@ -393,7 +393,8 @@ fn cmd_check(
     }
 
     // Apply fixes to Gemfile.lock
-    if fix && !dry_run
+    if fix
+        && !dry_run
         && let Some(ref results) = fix_results
     {
         let fixes: Vec<&fixer::FixSuggestion> = results
@@ -417,8 +418,7 @@ fn cmd_check(
 
             match std::fs::read_to_string(&lockfile_path) {
                 Ok(content) => {
-                    let (patched, patched_names) =
-                        fixer::patch_lockfile(&content, &owned_fixes);
+                    let (patched, patched_names) = fixer::patch_lockfile(&content, &owned_fixes);
                     if !patched_names.is_empty() {
                         // Atomic write: write to tmp file then rename
                         let tmp_path = lockfile_path.with_extension("lock.tmp");

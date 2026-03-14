@@ -192,7 +192,11 @@ fn print_fix_results(results: &[FixResult], output: &mut dyn Write, use_color: b
                     .ok();
                 }
             }
-            FixResult::Unresolvable { name, current_version, .. } => {
+            FixResult::Unresolvable {
+                name,
+                current_version,
+                ..
+            } => {
                 if use_color {
                     writeln!(
                         output,
