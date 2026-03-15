@@ -467,7 +467,8 @@ fn cmd_check(
                 .criticality()
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "Unknown".to_string());
-            let comment = format!("{} {} ({})", gem.name, gem.version, criticality);
+            let title = gem.advisory.title.as_deref().unwrap_or("N/A");
+            let comment = format!("{} {} ({}) - {}", gem.name, gem.version, criticality, title);
             for id in gem.advisory.identifiers() {
                 comments
                     .entry(id.clone())
@@ -481,7 +482,11 @@ fn cmd_check(
                 .criticality()
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "Unknown".to_string());
-            let comment = format!("{} {} ({})", ruby.engine, ruby.version, criticality);
+            let title = ruby.advisory.title.as_deref().unwrap_or("N/A");
+            let comment = format!(
+                "{} {} ({}) - {}",
+                ruby.engine, ruby.version, criticality, title
+            );
             for id in ruby.advisory.identifiers() {
                 comments
                     .entry(id.clone())
