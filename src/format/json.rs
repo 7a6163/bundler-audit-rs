@@ -3,6 +3,7 @@ use std::io::Write;
 use serde_json::{Value, json};
 
 use crate::advisory::Advisory;
+use crate::fixer::FixResult;
 use crate::scanner::Report;
 
 fn advisory_to_json(adv: &Advisory) -> Value {
@@ -21,7 +22,13 @@ fn advisory_to_json(adv: &Advisory) -> Value {
 }
 
 /// Print the scan report as JSON.
-pub fn print_json(report: &Report, output: &mut dyn Write, pretty: bool, fix: bool) {
+pub fn print_json(
+    report: &Report,
+    output: &mut dyn Write,
+    pretty: bool,
+    fix: bool,
+    fix_results: Option<&[FixResult]>,
+) {
     let results: Vec<Value> = report
         .insecure_sources
         .iter()
@@ -63,31 +70,61 @@ pub fn print_json(report: &Report, output: &mut dyn Write, pretty: bool, fix: bo
     });
 
     if fix {
-        let remediations: Vec<Value> = report
-            .remediations()
-            .iter()
-            .map(|r| {
-                let advisory_ids: Vec<String> = r.advisories.iter().map(|a| a.id.clone()).collect();
-                let mut all_patched: Vec<String> = Vec::new();
-                let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-                for adv in &r.advisories {
-                    for pv in &adv.patched_versions {
-                        let s = pv.to_string();
-                        if seen.insert(s.clone()) {
-                            all_patched.push(s);
+        if let Some(results) = fix_results {
+            let remediations: Vec<Value> = results
+                .iter()
+                .map(|r| match r {
+                    FixResult::Fixed(f) => json!({
+                        "gem": f.name,
+                        "current_version": f.current_version,
+                        "resolved_version": f.resolved_version.to_string(),
+                        "advisories": f.advisory_ids,
+                        "status": "fixed",
+                    }),
+                    FixResult::Unresolvable {
+                        name,
+                        current_version,
+                        advisory_ids,
+                    } => json!({
+                        "gem": name,
+                        "current_version": current_version,
+                        "resolved_version": null,
+                        "advisories": advisory_ids,
+                        "status": "unresolvable",
+                    }),
+                })
+                .collect();
+            doc["remediations"] = json!(remediations);
+        } else {
+            // Fallback: no fix results, show patched_versions
+            let remediations: Vec<Value> = report
+                .remediations()
+                .iter()
+                .map(|r| {
+                    let advisory_ids: Vec<String> =
+                        r.advisories.iter().map(|a| a.id.clone()).collect();
+                    let mut all_patched: Vec<String> = Vec::new();
+                    let mut seen: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
+                    for adv in &r.advisories {
+                        for pv in &adv.patched_versions {
+                            let s = pv.to_string();
+                            if seen.insert(s.clone()) {
+                                all_patched.push(s);
+                            }
                         }
                     }
-                }
-                json!({
-                    "gem": r.name,
-                    "current_version": r.version,
-                    "advisories": advisory_ids,
-                    "patched_versions": all_patched,
-                    "command": format!("bundle update {}", r.name),
+                    json!({
+                        "gem": r.name,
+                        "current_version": r.version,
+                        "advisories": advisory_ids,
+                        "patched_versions": all_patched,
+                        "command": format!("bundle update {}", r.name),
+                    })
                 })
-            })
-            .collect();
-        doc["remediations"] = json!(remediations);
+                .collect();
+            doc["remediations"] = json!(remediations);
+        }
     }
 
     if pretty {
@@ -116,7 +153,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, false, false);
+        print_json(&report, &mut buf, false, false, None);
         let output = String::from_utf8(buf).unwrap();
         let parsed: Value = serde_json::from_str(&output).unwrap();
         assert_eq!(parsed["results"].as_array().unwrap().len(), 0);
@@ -135,7 +172,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, false, false);
+        print_json(&report, &mut buf, false, false, None);
         let parsed: Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         let results = parsed["results"].as_array().unwrap();
         assert_eq!(results.len(), 1);
@@ -159,7 +196,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, true, false);
+        print_json(&report, &mut buf, true, false, None);
         let parsed: Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         let results = parsed["results"].as_array().unwrap();
         assert_eq!(results.len(), 1);
@@ -181,11 +218,11 @@ mod tests {
         };
 
         let mut pretty_buf = Vec::new();
-        print_json(&report, &mut pretty_buf, true, false);
+        print_json(&report, &mut pretty_buf, true, false, None);
         let pretty = String::from_utf8(pretty_buf).unwrap();
 
         let mut compact_buf = Vec::new();
-        print_json(&report, &mut compact_buf, false, false);
+        print_json(&report, &mut compact_buf, false, false, None);
         let compact = String::from_utf8(compact_buf).unwrap();
 
         // Pretty should have indentation, compact should not
@@ -209,7 +246,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, false, true);
+        print_json(&report, &mut buf, false, true, None);
         let parsed: Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         let remediations = parsed["remediations"].as_array().unwrap();
         assert_eq!(remediations.len(), 1);
@@ -240,7 +277,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, false, false);
+        print_json(&report, &mut buf, false, false, None);
         let parsed: Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         assert!(parsed.get("remediations").is_none());
     }
@@ -257,7 +294,7 @@ mod tests {
             advisory_load_errors: 3,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, false, false);
+        print_json(&report, &mut buf, false, false, None);
         let parsed: Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         assert_eq!(parsed["metadata"]["version_parse_errors"], 5);
         assert_eq!(parsed["metadata"]["advisory_load_errors"], 3);
@@ -283,7 +320,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, false, false);
+        print_json(&report, &mut buf, false, false, None);
         let parsed: Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         let results = parsed["results"].as_array().unwrap();
         assert_eq!(results.len(), 2);

@@ -1,5 +1,6 @@
 pub mod advisory;
 pub mod configuration;
+pub mod fixer;
 pub mod format;
 pub mod lockfile;
 pub mod scanner;

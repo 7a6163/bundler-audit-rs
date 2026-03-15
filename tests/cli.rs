@@ -375,8 +375,7 @@ fn check_fix_text_output() {
         .unwrap();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Remediation:"));
-    assert!(stdout.contains("bundle update"));
+    assert!(stdout.contains("Fixes:"));
 }
 
 #[test]
@@ -404,12 +403,7 @@ fn check_fix_json_output() {
     let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let remediations = parsed["remediations"].as_array().unwrap();
     assert!(!remediations.is_empty());
-    assert!(
-        remediations[0]["command"]
-            .as_str()
-            .unwrap()
-            .starts_with("bundle update")
-    );
+    assert!(remediations[0]["status"].as_str().is_some());
 }
 
 // ==================== check --fix on clean project ====================

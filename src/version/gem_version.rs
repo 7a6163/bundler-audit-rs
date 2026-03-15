@@ -173,6 +173,56 @@ impl Version {
         }
     }
 
+    /// Increment the last numeric segment by 1.
+    ///
+    /// Unlike `bump()` which drops the last segment first, this keeps all segments
+    /// and only increments the final numeric one.
+    ///
+    /// - `1.2.3` -> `1.2.4`
+    /// - `1.0` -> `1.1`
+    /// - `2` -> `3`
+    pub fn increment_last(&self) -> Version {
+        let mut new_segments = self.segments.clone();
+
+        // Find last numeric segment and increment it
+        for seg in new_segments.iter_mut().rev() {
+            if let Segment::Numeric(n) = seg {
+                *n += 1;
+                break;
+            }
+        }
+
+        let original = new_segments
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .join(".");
+
+        Version {
+            segments: new_segments,
+            original,
+        }
+    }
+
+    /// Create a version with an additional `.0` segment appended.
+    ///
+    /// - `1.2` -> `1.2.0`
+    pub fn append_zero(&self) -> Version {
+        let mut new_segments = self.segments.clone();
+        new_segments.push(Segment::Numeric(0));
+
+        let original = new_segments
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .join(".");
+
+        Version {
+            segments: new_segments,
+            original,
+        }
+    }
+
     /// Returns the segments of this version.
     pub fn segments(&self) -> &[Segment] {
         &self.segments
