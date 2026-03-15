@@ -73,6 +73,37 @@ impl Configuration {
         Ok(Self::default())
     }
 
+    /// Save configuration to a YAML file.
+    ///
+    /// Writes the `ignore` list and optional `max_db_age_days` in a stable,
+    /// sorted order so that diffs are minimal across runs.
+    pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
+        let mut lines = Vec::new();
+        lines.push("---".to_string());
+
+        if self.ignore.is_empty() && self.max_db_age_days.is_none() {
+            lines.push("ignore: []".to_string());
+        } else {
+            if !self.ignore.is_empty() {
+                lines.push("ignore:".to_string());
+                let mut sorted: Vec<&String> = self.ignore.iter().collect();
+                sorted.sort();
+                for id in sorted {
+                    lines.push(format!("  - {}", id));
+                }
+            }
+
+            if let Some(days) = self.max_db_age_days {
+                lines.push(format!("max_db_age_days: {}", days));
+            }
+        }
+
+        lines.push(String::new()); // trailing newline
+        std::fs::write(path, lines.join("\n")).map_err(|e| {
+            ConfigError::InvalidConfiguration(format!("failed to write {}: {}", path.display(), e))
+        })
+    }
+
     /// Parse configuration from a YAML string.
     pub fn from_yaml(yaml: &str) -> Result<Self, ConfigError> {
         let value: serde_yaml::Value =
@@ -232,6 +263,79 @@ mod tests {
         let yaml = "---\nignore:\n- CVE-123\n";
         let config = Configuration::from_yaml(yaml).unwrap();
         assert_eq!(config.max_db_age_days, None);
+    }
+
+    // ========== Save ==========
+
+    #[test]
+    fn save_and_reload_roundtrip() {
+        let tmp = std::env::temp_dir().join("gem_audit_test_save");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let path = tmp.join(".gem-audit.yml");
+        let mut ignore = HashSet::new();
+        ignore.insert("CVE-2020-1234".to_string());
+        ignore.insert("GHSA-aaaa-bbbb-cccc".to_string());
+
+        let config = Configuration {
+            ignore,
+            max_db_age_days: Some(7),
+        };
+        config.save(&path).unwrap();
+
+        let reloaded = Configuration::load(&path).unwrap();
+        assert_eq!(reloaded.ignore.len(), 2);
+        assert!(reloaded.ignore.contains("CVE-2020-1234"));
+        assert!(reloaded.ignore.contains("GHSA-aaaa-bbbb-cccc"));
+        assert_eq!(reloaded.max_db_age_days, Some(7));
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn save_empty_config() {
+        let tmp = std::env::temp_dir().join("gem_audit_test_save_empty");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let path = tmp.join(".gem-audit.yml");
+        let config = Configuration::default();
+        config.save(&path).unwrap();
+
+        let reloaded = Configuration::load(&path).unwrap();
+        assert!(reloaded.ignore.is_empty());
+        assert_eq!(reloaded.max_db_age_days, None);
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn save_sorted_output() {
+        let tmp = std::env::temp_dir().join("gem_audit_test_save_sorted");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let path = tmp.join(".gem-audit.yml");
+        let mut ignore = HashSet::new();
+        ignore.insert("CVE-2020-9999".to_string());
+        ignore.insert("CVE-2020-0001".to_string());
+        ignore.insert("GHSA-zzzz-yyyy-xxxx".to_string());
+
+        let config = Configuration {
+            ignore,
+            max_db_age_days: None,
+        };
+        config.save(&path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        // Should be sorted
+        assert_eq!(lines[2], "  - CVE-2020-0001");
+        assert_eq!(lines[3], "  - CVE-2020-9999");
+        assert_eq!(lines[4], "  - GHSA-zzzz-yyyy-xxxx");
+
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]
