@@ -127,6 +127,12 @@ Show remediation suggestions (dry-run, no files modified):
 $ gem-audit check --fix
 ```
 
+Ignore all detected vulnerabilities (writes to `.gem-audit.yml`):
+
+```
+$ gem-audit check --write-ignore
+```
+
 Use in CI (always update the advisory database before checking):
 
 ```
@@ -214,6 +220,7 @@ Running `gem-audit` with no subcommand is equivalent to `gem-audit check`.
 | `--fail-on-stale`           | Exit with code 3 if the database is stale  |
 | `--strict`                  | Treat parse/load warnings as errors (exit code 2) |
 | `--fix`                     | Show remediation suggestions for vulnerable gems   |
+| `--write-ignore`            | Write all detected advisory IDs to the config ignore list |
 
 ## Exit Codes
 

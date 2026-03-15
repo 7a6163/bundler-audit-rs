@@ -587,6 +587,108 @@ fn check_vulnerable_ruby_severity_filter() {
         .stdout(predicate::str::contains("No vulnerabilities found"));
 }
 
+// ==================== check --write-ignore ====================
+
+#[test]
+fn check_write_ignore_creates_config() {
+    let tmp = std::env::temp_dir().join("gem_audit_test_write_ignore");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+
+    let config_path = tmp.join(".gem-audit.yml");
+
+    Command::cargo_bin("gem-audit")
+        .unwrap()
+        .args([
+            "check",
+            "--write-ignore",
+            "--database",
+            mock_db().to_str().unwrap(),
+            "--gemfile-lock",
+            fixtures_dir()
+                .join("vulnerable_ruby/Gemfile.lock")
+                .to_str()
+                .unwrap(),
+            "--config",
+            config_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("Added"));
+
+    // Config file should exist and contain the advisory ID
+    let content = std::fs::read_to_string(&config_path).unwrap();
+    assert!(content.contains("CVE-2021-31810"));
+
+    std::fs::remove_dir_all(&tmp).unwrap();
+}
+
+#[test]
+fn check_write_ignore_merges_existing() {
+    let tmp = std::env::temp_dir().join("gem_audit_test_write_ignore_merge");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+
+    let config_path = tmp.join(".gem-audit.yml");
+    // Pre-existing config with an existing ignore entry
+    std::fs::write(&config_path, "---\nignore:\n  - CVE-EXISTING-001\n").unwrap();
+
+    Command::cargo_bin("gem-audit")
+        .unwrap()
+        .args([
+            "check",
+            "--write-ignore",
+            "--database",
+            mock_db().to_str().unwrap(),
+            "--gemfile-lock",
+            fixtures_dir()
+                .join("vulnerable_ruby/Gemfile.lock")
+                .to_str()
+                .unwrap(),
+            "--config",
+            config_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("Added"));
+
+    let content = std::fs::read_to_string(&config_path).unwrap();
+    // Should contain both old and new entries
+    assert!(content.contains("CVE-EXISTING-001"));
+    assert!(content.contains("CVE-2021-31810"));
+
+    std::fs::remove_dir_all(&tmp).unwrap();
+}
+
+#[test]
+fn check_write_ignore_no_vulns_no_write() {
+    let tmp = std::env::temp_dir().join("gem_audit_test_write_ignore_clean");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+
+    let config_path = tmp.join(".gem-audit.yml");
+
+    Command::cargo_bin("gem-audit")
+        .unwrap()
+        .args([
+            "check",
+            "--write-ignore",
+            "--database",
+            mock_db().to_str().unwrap(),
+            "--gemfile-lock",
+            fixtures_dir().join("secure/Gemfile.lock").to_str().unwrap(),
+            "--config",
+            config_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // No vulns → no config file created
+    assert!(!config_path.exists());
+
+    std::fs::remove_dir_all(&tmp).unwrap();
+}
+
 // ==================== stats with mock DB ====================
 
 #[test]

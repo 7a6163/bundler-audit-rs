@@ -98,6 +98,10 @@ enum Commands {
         /// Preview fix changes without writing (use with --fix)
         #[arg(long)]
         dry_run: bool,
+
+        /// Write all detected advisory IDs to the config file's ignore list
+        #[arg(long)]
+        write_ignore: bool,
     },
 
     /// Update the ruby-advisory-db
@@ -154,6 +158,7 @@ fn main() {
             strict,
             fix,
             dry_run,
+            write_ignore,
         }) => cmd_check(
             &dir,
             quiet,
@@ -171,6 +176,7 @@ fn main() {
             strict,
             fix,
             dry_run,
+            write_ignore,
         ),
         Some(Commands::Update { quiet, database }) => cmd_update(quiet, database.as_deref()),
         Some(Commands::Download { quiet, database }) => cmd_download(quiet, database.as_deref()),
@@ -194,6 +200,7 @@ fn main() {
                 None,
                 None,
                 None,
+                false,
                 false,
                 false,
                 false,
@@ -231,6 +238,7 @@ fn cmd_check(
     strict: bool,
     fix: bool,
     dry_run: bool,
+    write_ignore: bool,
 ) -> i32 {
     let dir = Path::new(dir);
     if !dir.is_dir() {
@@ -334,7 +342,7 @@ fn cmd_check(
     let ignore_set = if !ignore.is_empty() {
         ignore.iter().cloned().collect::<HashSet<String>>()
     } else {
-        config.ignore
+        config.ignore.clone()
     };
 
     let options = ScanOptions {
@@ -446,6 +454,43 @@ fn cmd_check(
                 }
             }
         }
+    }
+
+    // Write all detected advisory IDs to the config ignore list
+    if write_ignore && report.vulnerable() {
+        let mut new_ignore = config.ignore.clone();
+        for gem in &report.unpatched_gems {
+            for id in gem.advisory.identifiers() {
+                new_ignore.insert(id);
+            }
+        }
+        for ruby in &report.vulnerable_rubies {
+            for id in ruby.advisory.identifiers() {
+                new_ignore.insert(id);
+            }
+        }
+
+        let updated_config = Configuration {
+            ignore: new_ignore,
+            max_db_age_days: config.max_db_age_days,
+        };
+
+        match updated_config.save(&config_path) {
+            Ok(()) => {
+                let count = updated_config.ignore.len() - config.ignore.len();
+                eprintln!(
+                    "Added {} advisory ID(s) to {}",
+                    count,
+                    config_path.display()
+                );
+            }
+            Err(e) => {
+                eprintln!("Failed to write config: {}", e);
+                return EXIT_ERROR;
+            }
+        }
+
+        return EXIT_SUCCESS;
     }
 
     if report.vulnerable() {
