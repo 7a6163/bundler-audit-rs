@@ -459,13 +459,33 @@ fn cmd_check(
     // Write all detected advisory IDs to the config ignore list
     if write_ignore && report.vulnerable() {
         let mut new_ignore = config.ignore.clone();
+        let mut comments = std::collections::HashMap::new();
+
         for gem in &report.unpatched_gems {
+            let criticality = gem
+                .advisory
+                .criticality()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "Unknown".to_string());
+            let comment = format!("{} {} ({})", gem.name, gem.version, criticality);
             for id in gem.advisory.identifiers() {
+                comments
+                    .entry(id.clone())
+                    .or_insert_with(|| comment.clone());
                 new_ignore.insert(id);
             }
         }
         for ruby in &report.vulnerable_rubies {
+            let criticality = ruby
+                .advisory
+                .criticality()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "Unknown".to_string());
+            let comment = format!("{} {} ({})", ruby.engine, ruby.version, criticality);
             for id in ruby.advisory.identifiers() {
+                comments
+                    .entry(id.clone())
+                    .or_insert_with(|| comment.clone());
                 new_ignore.insert(id);
             }
         }
@@ -475,7 +495,7 @@ fn cmd_check(
             max_db_age_days: config.max_db_age_days,
         };
 
-        match updated_config.save(&config_path) {
+        match updated_config.save(&config_path, Some(&comments)) {
             Ok(()) => {
                 let count = updated_config.ignore.len() - config.ignore.len();
                 eprintln!(

@@ -77,7 +77,14 @@ impl Configuration {
     ///
     /// Writes the `ignore` list and optional `max_db_age_days` in a stable,
     /// sorted order so that diffs are minimal across runs.
-    pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
+    ///
+    /// An optional `comments` map can annotate each advisory ID with context
+    /// (e.g. gem name, version, criticality).
+    pub fn save(
+        &self,
+        path: &Path,
+        comments: Option<&std::collections::HashMap<String, String>>,
+    ) -> Result<(), ConfigError> {
         let mut lines = Vec::new();
         lines.push("---".to_string());
 
@@ -89,7 +96,11 @@ impl Configuration {
                 let mut sorted: Vec<&String> = self.ignore.iter().collect();
                 sorted.sort();
                 for id in sorted {
-                    lines.push(format!("  - {}", id));
+                    let comment = comments.and_then(|c| c.get(id.as_str()));
+                    match comment {
+                        Some(c) => lines.push(format!("  - {}  # {}", id, c)),
+                        None => lines.push(format!("  - {}", id)),
+                    }
                 }
             }
 
@@ -282,7 +293,7 @@ mod tests {
             ignore,
             max_db_age_days: Some(7),
         };
-        config.save(&path).unwrap();
+        config.save(&path, None).unwrap();
 
         let reloaded = Configuration::load(&path).unwrap();
         assert_eq!(reloaded.ignore.len(), 2);
@@ -301,7 +312,7 @@ mod tests {
 
         let path = tmp.join(".gem-audit.yml");
         let config = Configuration::default();
-        config.save(&path).unwrap();
+        config.save(&path, None).unwrap();
 
         let reloaded = Configuration::load(&path).unwrap();
         assert!(reloaded.ignore.is_empty());
@@ -326,7 +337,7 @@ mod tests {
             ignore,
             max_db_age_days: None,
         };
-        config.save(&path).unwrap();
+        config.save(&path, None).unwrap();
 
         let content = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = content.lines().collect();
@@ -334,6 +345,47 @@ mod tests {
         assert_eq!(lines[2], "  - CVE-2020-0001");
         assert_eq!(lines[3], "  - CVE-2020-9999");
         assert_eq!(lines[4], "  - GHSA-zzzz-yyyy-xxxx");
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn save_with_comments() {
+        let tmp = std::env::temp_dir().join("gem_audit_test_save_comments");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let path = tmp.join(".gem-audit.yml");
+        let mut ignore = HashSet::new();
+        ignore.insert("CVE-2020-1234".to_string());
+        ignore.insert("GHSA-aaaa-bbbb-cccc".to_string());
+
+        let config = Configuration {
+            ignore,
+            max_db_age_days: None,
+        };
+
+        let mut comments = std::collections::HashMap::new();
+        comments.insert(
+            "CVE-2020-1234".to_string(),
+            "activerecord 3.2.10 (Critical)".to_string(),
+        );
+        comments.insert(
+            "GHSA-aaaa-bbbb-cccc".to_string(),
+            "rack 1.5.0 (Medium)".to_string(),
+        );
+
+        config.save(&path, Some(&comments)).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("CVE-2020-1234  # activerecord 3.2.10 (Critical)"));
+        assert!(content.contains("GHSA-aaaa-bbbb-cccc  # rack 1.5.0 (Medium)"));
+
+        // Should still be loadable (YAML ignores comments)
+        let reloaded = Configuration::load(&path).unwrap();
+        assert_eq!(reloaded.ignore.len(), 2);
+        assert!(reloaded.ignore.contains("CVE-2020-1234"));
+        assert!(reloaded.ignore.contains("GHSA-aaaa-bbbb-cccc"));
 
         std::fs::remove_dir_all(&tmp).unwrap();
     }
