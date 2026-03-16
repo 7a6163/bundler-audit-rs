@@ -1,4 +1,5 @@
 mod parser;
+pub mod platform;
 mod ruby_version;
 
 pub use parser::parse;

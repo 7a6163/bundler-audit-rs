@@ -91,30 +91,10 @@ fn try_patch_spec_line(line: &str, fixes: &[FixSuggestion]) -> Option<String> {
 }
 
 /// Split "1.13.10-x86_64-linux" into ("1.13.10", Some("x86_64-linux")).
+///
+/// Delegates to the shared `lockfile::platform::split_version_platform`.
 fn split_version_platform(input: &str) -> (&str, Option<&str>) {
-    // Known arch prefixes that start platform suffixes
-    let arch_prefixes = ["x86_64-", "x86-", "x64-", "arm64-", "aarch64-", "arm-"];
-    let keyword_platforms = ["java", "jruby", "universal-"];
-
-    for prefix in &arch_prefixes {
-        if let Some(pos) = input.find(prefix)
-            && pos > 0
-            && input.as_bytes()[pos - 1] == b'-'
-        {
-            return (&input[..pos - 1], Some(&input[pos..]));
-        }
-    }
-
-    for kw in &keyword_platforms {
-        if let Some(pos) = input.find(kw)
-            && pos > 0
-            && input.as_bytes()[pos - 1] == b'-'
-        {
-            return (&input[..pos - 1], Some(&input[pos..]));
-        }
-    }
-
-    (input, None)
+    crate::lockfile::platform::split_version_platform(input)
 }
 
 fn extract_gem_name(line: &str) -> Option<String> {
