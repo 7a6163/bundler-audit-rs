@@ -2,7 +2,7 @@ use crate::scanner::Remediation;
 use crate::version::Version;
 
 /// A fix suggestion for a single gem: the resolved minimum safe version.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FixSuggestion {
     pub name: String,
     pub current_version: String,

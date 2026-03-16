@@ -1,4 +1,5 @@
 pub mod advisory;
+pub mod check;
 pub mod configuration;
 pub mod fixer;
 pub mod format;

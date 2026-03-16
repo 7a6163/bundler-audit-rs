@@ -464,9 +464,9 @@ mod tests {
 
     #[test]
     fn open_fixture_advisory_dir() {
-        let (db_dir, _) = temp_mock_db("fixture");
+        let (tmp, _) = temp_mock_db("fixture");
 
-        let db = Database::open(&db_dir).unwrap();
+        let db = Database::open(tmp.path()).unwrap();
         assert!(!db.is_git());
 
         let advisories = db.advisories_for("test");
@@ -480,8 +480,6 @@ mod tests {
         // Check patched version
         let (vulns, _errors) = db.check_gem("test", &Version::parse("1.0.0").unwrap());
         assert!(vulns.is_empty());
-
-        std::fs::remove_dir_all(&db_dir).unwrap();
     }
 
     // ========== Error Cases ==========
@@ -505,60 +503,55 @@ mod tests {
 
     // Helper: create an isolated temporary mock DB for tests that don't
     // share state with `mock_database()` in scanner tests.
-    fn temp_mock_db(suffix: &str) -> (PathBuf, PathBuf) {
+    fn temp_mock_db(_suffix: &str) -> (tempfile::TempDir, PathBuf) {
         let fixture_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-        let db_dir = std::env::temp_dir().join(format!("gem_audit_db_test_{}", suffix));
-        let _ = std::fs::remove_dir_all(&db_dir);
-        let gem_dir = db_dir.join("gems").join("test");
+        let tmp = tempfile::tempdir().unwrap();
+        let gem_dir = tmp.path().join("gems").join("test");
         std::fs::create_dir_all(&gem_dir).unwrap();
         std::fs::copy(
             fixture_dir.join("advisory/CVE-2020-1234.yml"),
             gem_dir.join("CVE-2020-1234.yml"),
         )
         .unwrap();
-        (db_dir, fixture_dir)
+        (tmp, fixture_dir)
     }
 
     // ========== Database Display ==========
 
     #[test]
     fn database_display() {
-        let (db_dir, _) = temp_mock_db("display");
-        let db = Database::open(&db_dir).unwrap();
+        let (tmp, _) = temp_mock_db("display");
+        let db = Database::open(tmp.path()).unwrap();
         let display = db.to_string();
-        assert!(display.contains("gem_audit_db_test_display"));
-        std::fs::remove_dir_all(&db_dir).unwrap();
+        assert_eq!(display, tmp.path().to_string_lossy());
     }
 
     // ========== Database exists/path ==========
 
     #[test]
     fn database_exists_with_gems() {
-        let (db_dir, _) = temp_mock_db("exists");
-        let db = Database::open(&db_dir).unwrap();
+        let (tmp, _) = temp_mock_db("exists");
+        let db = Database::open(tmp.path()).unwrap();
         assert!(db.exists());
-        assert!(db.path() == db_dir.as_path());
-        std::fs::remove_dir_all(&db_dir).unwrap();
+        assert!(db.path() == tmp.path());
     }
 
     // ========== Database advisories/size with mock ==========
 
     #[test]
     fn database_advisories_with_mock() {
-        let (db_dir, _) = temp_mock_db("advisories");
-        let db = Database::open(&db_dir).unwrap();
+        let (tmp, _) = temp_mock_db("advisories");
+        let db = Database::open(tmp.path()).unwrap();
         let all = db.advisories();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].id, "CVE-2020-1234");
-        std::fs::remove_dir_all(&db_dir).unwrap();
     }
 
     #[test]
     fn database_size_with_mock() {
-        let (db_dir, _) = temp_mock_db("size");
-        let db = Database::open(&db_dir).unwrap();
+        let (tmp, _) = temp_mock_db("size");
+        let db = Database::open(tmp.path()).unwrap();
         assert_eq!(db.size(), 1);
-        std::fs::remove_dir_all(&db_dir).unwrap();
     }
 
     // ========== Ruby advisory methods ==========
@@ -613,11 +606,10 @@ mod tests {
 
     #[test]
     fn commit_id_none_for_non_git() {
-        let (db_dir, _) = temp_mock_db("nongit");
-        let db = Database::open(&db_dir).unwrap();
+        let (tmp, _) = temp_mock_db("nongit");
+        let db = Database::open(tmp.path()).unwrap();
         assert_eq!(db.commit_id(), None);
         assert_eq!(db.last_updated_at(), None);
-        std::fs::remove_dir_all(&db_dir).unwrap();
     }
 
     // ========== DatabaseError Display ==========

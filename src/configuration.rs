@@ -117,8 +117,8 @@ impl Configuration {
 
     /// Parse configuration from a YAML string.
     pub fn from_yaml(yaml: &str) -> Result<Self, ConfigError> {
-        let value: serde_yaml::Value =
-            serde_yaml::from_str(yaml).map_err(|e| ConfigError::InvalidYaml(e.to_string()))?;
+        let value: serde_yml::Value =
+            serde_yml::from_str(yaml).map_err(|e| ConfigError::InvalidYaml(e.to_string()))?;
 
         // Must be a mapping (Hash)
         let mapping = match value.as_mapping() {
@@ -132,7 +132,7 @@ impl Configuration {
 
         let mut ignore = HashSet::new();
 
-        if let Some(ignore_val) = mapping.get(serde_yaml::Value::String("ignore".to_string())) {
+        if let Some(ignore_val) = mapping.get(serde_yml::Value::String("ignore".to_string())) {
             let arr = match ignore_val.as_sequence() {
                 Some(seq) => seq,
                 None => {
@@ -157,7 +157,7 @@ impl Configuration {
         }
 
         let max_db_age_days = mapping
-            .get(serde_yaml::Value::String("max_db_age_days".to_string()))
+            .get(serde_yml::Value::String("max_db_age_days".to_string()))
             .and_then(|v| v.as_u64());
 
         Ok(Configuration {
@@ -280,11 +280,9 @@ mod tests {
 
     #[test]
     fn save_and_reload_roundtrip() {
-        let tmp = std::env::temp_dir().join("gem_audit_test_save");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
 
-        let path = tmp.join(".gem-audit.yml");
+        let path = tmp.path().join(".gem-audit.yml");
         let mut ignore = HashSet::new();
         ignore.insert("CVE-2020-1234".to_string());
         ignore.insert("GHSA-aaaa-bbbb-cccc".to_string());
@@ -300,34 +298,26 @@ mod tests {
         assert!(reloaded.ignore.contains("CVE-2020-1234"));
         assert!(reloaded.ignore.contains("GHSA-aaaa-bbbb-cccc"));
         assert_eq!(reloaded.max_db_age_days, Some(7));
-
-        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]
     fn save_empty_config() {
-        let tmp = std::env::temp_dir().join("gem_audit_test_save_empty");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
 
-        let path = tmp.join(".gem-audit.yml");
+        let path = tmp.path().join(".gem-audit.yml");
         let config = Configuration::default();
         config.save(&path, None).unwrap();
 
         let reloaded = Configuration::load(&path).unwrap();
         assert!(reloaded.ignore.is_empty());
         assert_eq!(reloaded.max_db_age_days, None);
-
-        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]
     fn save_sorted_output() {
-        let tmp = std::env::temp_dir().join("gem_audit_test_save_sorted");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
 
-        let path = tmp.join(".gem-audit.yml");
+        let path = tmp.path().join(".gem-audit.yml");
         let mut ignore = HashSet::new();
         ignore.insert("CVE-2020-9999".to_string());
         ignore.insert("CVE-2020-0001".to_string());
@@ -345,17 +335,13 @@ mod tests {
         assert_eq!(lines[2], "  - CVE-2020-0001");
         assert_eq!(lines[3], "  - CVE-2020-9999");
         assert_eq!(lines[4], "  - GHSA-zzzz-yyyy-xxxx");
-
-        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]
     fn save_with_comments() {
-        let tmp = std::env::temp_dir().join("gem_audit_test_save_comments");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
 
-        let path = tmp.join(".gem-audit.yml");
+        let path = tmp.path().join(".gem-audit.yml");
         let mut ignore = HashSet::new();
         ignore.insert("CVE-2020-1234".to_string());
         ignore.insert("GHSA-aaaa-bbbb-cccc".to_string());
@@ -386,8 +372,6 @@ mod tests {
         assert_eq!(reloaded.ignore.len(), 2);
         assert!(reloaded.ignore.contains("CVE-2020-1234"));
         assert!(reloaded.ignore.contains("GHSA-aaaa-bbbb-cccc"));
-
-        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]
@@ -406,22 +390,18 @@ mod tests {
 
     #[test]
     fn legacy_config_fallback() {
-        let tmp = std::env::temp_dir().join("gem_audit_test_legacy");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
 
         // Only create the legacy file
         std::fs::write(
-            tmp.join(".bundler-audit.yml"),
+            tmp.path().join(".bundler-audit.yml"),
             "---\nignore:\n  - CVE-LEGACY-001\n",
         )
         .unwrap();
 
         // load_or_default with default name should fall back
-        let config = Configuration::load_or_default(&tmp.join(".gem-audit.yml")).unwrap();
+        let config = Configuration::load_or_default(&tmp.path().join(".gem-audit.yml")).unwrap();
         assert!(config.ignore.contains("CVE-LEGACY-001"));
-
-        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]

@@ -13,6 +13,109 @@ enum Section {
     BundledWith,
 }
 
+/// Mutable state accumulated while parsing a source section (GEM/GIT/PATH).
+struct SourceState {
+    remote: Option<String>,
+    revision: Option<String>,
+    branch: Option<String>,
+    tag: Option<String>,
+    in_specs: bool,
+    current_spec: Option<GemSpec>,
+}
+
+impl SourceState {
+    fn new() -> Self {
+        Self {
+            remote: None,
+            revision: None,
+            branch: None,
+            tag: None,
+            in_specs: false,
+            current_spec: None,
+        }
+    }
+
+    /// Finalize the current source and push it to `sources`.
+    fn finalize_source(&mut self, section: &Section, sources: &mut Vec<Source>) {
+        if let Some(remote) = self.remote.take() {
+            match section {
+                Section::Gem => {
+                    sources.push(Source::Rubygems(RubygemsSource { remote }));
+                }
+                Section::Git => {
+                    sources.push(Source::Git(GitSource {
+                        remote,
+                        revision: self.revision.take(),
+                        branch: self.branch.take(),
+                        tag: self.tag.take(),
+                    }));
+                }
+                Section::Path => {
+                    sources.push(Source::Path(PathSource { remote }));
+                }
+                _ => {}
+            }
+        }
+        self.revision = None;
+        self.branch = None;
+        self.tag = None;
+    }
+
+    /// Flush the current in-progress spec to `specs`.
+    fn flush_spec(&mut self, specs: &mut Vec<GemSpec>) {
+        if let Some(spec) = self.current_spec.take() {
+            specs.push(spec);
+        }
+    }
+
+    /// Parse a line inside a GEM/GIT/PATH section.
+    fn parse_source_line(
+        &mut self,
+        trimmed: &str,
+        indent: usize,
+        specs: &mut Vec<GemSpec>,
+        source_index: usize,
+    ) {
+        // Indent 2: attributes (remote:, revision:, specs:, branch:, tag:)
+        if indent == 2 {
+            if let Some(value) = trimmed.strip_prefix("remote:") {
+                self.remote = Some(value.trim().to_string());
+                self.in_specs = false;
+            } else if let Some(value) = trimmed.strip_prefix("revision:") {
+                self.revision = Some(value.trim().to_string());
+            } else if let Some(value) = trimmed.strip_prefix("branch:") {
+                self.branch = Some(value.trim().to_string());
+            } else if let Some(value) = trimmed.strip_prefix("tag:") {
+                self.tag = Some(value.trim().to_string());
+            } else if trimmed == "specs:" {
+                self.in_specs = true;
+            }
+            return;
+        }
+
+        if !self.in_specs {
+            return;
+        }
+
+        // Indent 4: gem spec entry — "name (version)" or "name (version-platform)"
+        if indent == 4 {
+            self.flush_spec(specs);
+
+            if let Some(spec) = parse_gem_spec_line(trimmed, source_index) {
+                self.current_spec = Some(spec);
+            }
+            return;
+        }
+
+        // Indent 6: dependency of current spec — "name (constraint)" or "name"
+        if indent == 6
+            && let Some(spec) = &mut self.current_spec
+        {
+            spec.dependencies.push(parse_gem_dependency(trimmed));
+        }
+    }
+}
+
 /// Parse a Gemfile.lock string into a `Lockfile`.
 pub fn parse(input: &str) -> Result<Lockfile, ParseError> {
     let mut sources: Vec<Source> = Vec::new();
@@ -23,27 +126,12 @@ pub fn parse(input: &str) -> Result<Lockfile, ParseError> {
     let mut bundled_with: Option<String> = None;
 
     let mut section = Section::None;
-    let mut in_specs = false;
+    let mut state = SourceState::new();
 
-    // Current source being built
-    let mut current_remote: Option<String> = None;
-    let mut current_revision: Option<String> = None;
-    let mut current_branch: Option<String> = None;
-    let mut current_tag: Option<String> = None;
-
-    // Current gem spec being built
-    let mut current_spec: Option<GemSpec> = None;
-
-    let lines: Vec<&str> = input.lines().collect();
-
-    for (line_idx, &line) in lines.iter().enumerate() {
-        let _line_number = line_idx + 1;
-
+    for line in input.lines() {
         // Empty line — finalize current spec if any
         if line.trim().is_empty() {
-            if let Some(spec) = current_spec.take() {
-                specs.push(spec);
-            }
+            state.flush_spec(&mut specs);
             continue;
         }
 
@@ -52,21 +140,10 @@ pub fn parse(input: &str) -> Result<Lockfile, ParseError> {
 
         // Section headers (indent == 0)
         if indent == 0 {
-            // Finalize any in-progress spec
-            if let Some(spec) = current_spec.take() {
-                specs.push(spec);
-            }
-            // Finalize any in-progress source
-            finalize_source(
-                &section,
-                &mut sources,
-                &mut current_remote,
-                &mut current_revision,
-                &mut current_branch,
-                &mut current_tag,
-            );
+            state.flush_spec(&mut specs);
+            state.finalize_source(&section, &mut sources);
+            state.in_specs = false;
 
-            in_specs = false;
             section = match trimmed {
                 "GIT" => Section::Git,
                 "GEM" => Section::Gem,
@@ -82,19 +159,7 @@ pub fn parse(input: &str) -> Result<Lockfile, ParseError> {
 
         match section {
             Section::Git | Section::Gem | Section::Path => {
-                parse_source_line(
-                    trimmed,
-                    indent,
-                    &section,
-                    &mut in_specs,
-                    &mut current_remote,
-                    &mut current_revision,
-                    &mut current_branch,
-                    &mut current_tag,
-                    &mut current_spec,
-                    &mut specs,
-                    sources.len(),
-                );
+                state.parse_source_line(trimmed, indent, &mut specs, sources.len());
             }
             Section::Platforms => {
                 if indent >= 2 {
@@ -121,17 +186,8 @@ pub fn parse(input: &str) -> Result<Lockfile, ParseError> {
     }
 
     // Finalize remaining state
-    if let Some(spec) = current_spec.take() {
-        specs.push(spec);
-    }
-    finalize_source(
-        &section,
-        &mut sources,
-        &mut current_remote,
-        &mut current_revision,
-        &mut current_branch,
-        &mut current_tag,
-    );
+    state.flush_spec(&mut specs);
+    state.finalize_source(&section, &mut sources);
 
     if sources.is_empty() && specs.is_empty() {
         return Err(ParseError::Empty);
@@ -150,96 +206,6 @@ pub fn parse(input: &str) -> Result<Lockfile, ParseError> {
 /// Count leading spaces in a line.
 fn count_indent(line: &str) -> usize {
     line.len() - line.trim_start().len()
-}
-
-/// Finalize the current source section and add it to the sources list.
-fn finalize_source(
-    section: &Section,
-    sources: &mut Vec<Source>,
-    current_remote: &mut Option<String>,
-    current_revision: &mut Option<String>,
-    current_branch: &mut Option<String>,
-    current_tag: &mut Option<String>,
-) {
-    if let Some(remote) = current_remote.take() {
-        match section {
-            Section::Gem => {
-                sources.push(Source::Rubygems(RubygemsSource { remote }));
-            }
-            Section::Git => {
-                sources.push(Source::Git(GitSource {
-                    remote,
-                    revision: current_revision.take(),
-                    branch: current_branch.take(),
-                    tag: current_tag.take(),
-                }));
-            }
-            Section::Path => {
-                sources.push(Source::Path(PathSource { remote }));
-            }
-            _ => {}
-        }
-    }
-    *current_revision = None;
-    *current_branch = None;
-    *current_tag = None;
-}
-
-/// Parse a line inside a GEM/GIT/PATH section.
-#[allow(clippy::too_many_arguments)]
-fn parse_source_line(
-    trimmed: &str,
-    indent: usize,
-    _section: &Section,
-    in_specs: &mut bool,
-    current_remote: &mut Option<String>,
-    current_revision: &mut Option<String>,
-    current_branch: &mut Option<String>,
-    current_tag: &mut Option<String>,
-    current_spec: &mut Option<GemSpec>,
-    specs: &mut Vec<GemSpec>,
-    source_index: usize,
-) {
-    // Indent 2: attributes (remote:, revision:, specs:, branch:, tag:)
-    if indent == 2 {
-        if let Some(value) = trimmed.strip_prefix("remote:") {
-            *current_remote = Some(value.trim().to_string());
-            *in_specs = false;
-        } else if let Some(value) = trimmed.strip_prefix("revision:") {
-            *current_revision = Some(value.trim().to_string());
-        } else if let Some(value) = trimmed.strip_prefix("branch:") {
-            *current_branch = Some(value.trim().to_string());
-        } else if let Some(value) = trimmed.strip_prefix("tag:") {
-            *current_tag = Some(value.trim().to_string());
-        } else if trimmed == "specs:" {
-            *in_specs = true;
-        }
-        return;
-    }
-
-    if !*in_specs {
-        return;
-    }
-
-    // Indent 4: gem spec entry — "name (version)" or "name (version-platform)"
-    if indent == 4 {
-        // Finalize previous spec
-        if let Some(spec) = current_spec.take() {
-            specs.push(spec);
-        }
-
-        if let Some(spec) = parse_gem_spec_line(trimmed, source_index) {
-            *current_spec = Some(spec);
-        }
-        return;
-    }
-
-    // Indent 6: dependency of current spec — "name (constraint)" or "name"
-    if indent == 6
-        && let Some(spec) = current_spec
-    {
-        spec.dependencies.push(parse_gem_dependency(trimmed));
-    }
 }
 
 /// Parse a gem spec line like "actioncable (5.2.8)" or "nokogiri (1.13.10-x86_64-linux)".
@@ -261,62 +227,10 @@ fn parse_gem_spec_line(trimmed: &str, source_index: usize) -> Option<GemSpec> {
 
 /// Split "1.13.10-x86_64-linux" into version "1.13.10" and platform "x86_64-linux".
 ///
-/// Platform detection: if the string contains a hyphen followed by a known platform
-/// pattern (like x86_64-linux, arm64-darwin, java, etc.), split there.
-/// Otherwise, the entire string is the version.
+/// Delegates to the shared `platform::split_version_platform` function.
 fn parse_version_platform(input: &str) -> (String, Option<String>) {
-    // Known platform patterns that appear after a hyphen in gem versions
-    let platform_patterns = [
-        "x86_64-linux-gnu",
-        "x86_64-linux-musl",
-        "x86_64-linux",
-        "x86_64-darwin",
-        "x86-linux",
-        "x86-mingw32",
-        "x86-mswin32",
-        "x64-mingw32",
-        "x64-mingw-ucrt",
-        "arm64-darwin",
-        "aarch64-linux-gnu",
-        "aarch64-linux-musl",
-        "aarch64-linux",
-        "arm-linux-gnu",
-        "arm-linux-musl",
-        "arm-linux",
-        "java",
-        "jruby",
-        "mswin32",
-        "mingw32",
-        "universal-darwin",
-    ];
-
-    for pattern in &platform_patterns {
-        if let Some(prefix) = input.strip_suffix(pattern)
-            && let Some(version) = prefix.strip_suffix('-')
-        {
-            return (version.to_string(), Some(pattern.to_string()));
-        }
-    }
-
-    // Fallback: heuristic — try each hyphen position (left to right) and check
-    // if the suffix looks like a platform identifier.
-    for (pos, _) in input.match_indices('-') {
-        let after = &input[pos + 1..];
-        if after.starts_with("x86")
-            || after.starts_with("x64")
-            || after.starts_with("arm")
-            || after.starts_with("aarch")
-            || after == "java"
-            || after == "jruby"
-            || after.starts_with("universal")
-            || after.contains("mingw")
-            || after.contains("mswin")
-        {
-            return (input[..pos].to_string(), Some(after.to_string()));
-        }
-    }
-
-    (input.to_string(), None)
+    let (version, platform) = super::platform::split_version_platform(input);
+    (version.to_string(), platform.map(String::from))
 }
 
 /// Parse a gem dependency line like "actionpack (= 5.2.8)" or "method_source" or "rack (~> 2.0, >= 2.0.8)".

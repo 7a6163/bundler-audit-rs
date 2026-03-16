@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{self, Write};
 
 use crate::advisory::Criticality;
 use crate::fixer::FixResult;
@@ -25,7 +25,7 @@ pub fn print_text(
     use_color: bool,
     fix: bool,
     fix_results: Option<&[FixResult]>,
-) {
+) -> io::Result<()> {
     let total_sources = report.insecure_sources.len();
     let total_gems = report.unpatched_gems.len();
     let total_rubies = report.vulnerable_rubies.len();
@@ -38,38 +38,37 @@ pub fn print_text(
                 output,
                 "{}{}Insecure Source URI found:{} {}",
                 YELLOW, BOLD, RESET, source.source
-            )
-            .ok();
+            )?;
         } else {
-            writeln!(output, "Insecure Source URI found: {}", source.source).ok();
+            writeln!(output, "Insecure Source URI found: {}", source.source)?;
         }
 
         if i < total_sources - 1 || has_more_after_sources {
-            writeln!(output).ok();
+            writeln!(output)?;
         }
     }
 
     for (i, vuln) in report.unpatched_gems.iter().enumerate() {
-        print_advisory(output, vuln, verbose, use_color);
+        print_advisory(output, vuln, verbose, use_color)?;
         if i < total_gems - 1 || total_rubies > 0 {
             if use_color {
-                writeln!(output, "{}{}{}", DIM, "─".repeat(40), RESET).ok();
+                writeln!(output, "{}{}{}", DIM, "─".repeat(40), RESET)?;
             } else {
-                writeln!(output, "{}", "─".repeat(40)).ok();
+                writeln!(output, "{}", "─".repeat(40))?;
             }
-            writeln!(output).ok();
+            writeln!(output)?;
         }
     }
 
     for (i, vuln) in report.vulnerable_rubies.iter().enumerate() {
-        print_ruby_advisory(output, vuln, verbose, use_color);
+        print_ruby_advisory(output, vuln, verbose, use_color)?;
         if i < total_rubies - 1 {
             if use_color {
-                writeln!(output, "{}{}{}", DIM, "─".repeat(40), RESET).ok();
+                writeln!(output, "{}{}{}", DIM, "─".repeat(40), RESET)?;
             } else {
-                writeln!(output, "{}", "─".repeat(40)).ok();
+                writeln!(output, "{}", "─".repeat(40))?;
             }
-            writeln!(output).ok();
+            writeln!(output)?;
         }
     }
 
@@ -99,22 +98,21 @@ pub fn print_text(
         }
         let summary = parts.join(", ");
 
-        writeln!(output).ok();
+        writeln!(output)?;
         if use_color {
             writeln!(
                 output,
                 "{}{}Vulnerabilities found!{} ({})",
                 RED, BOLD, RESET, summary
-            )
-            .ok();
+            )?;
         } else {
-            writeln!(output, "Vulnerabilities found! ({})", summary).ok();
+            writeln!(output, "Vulnerabilities found! ({})", summary)?;
         }
     } else if !quiet {
         if use_color {
-            writeln!(output, "{}{}No vulnerabilities found{}", GREEN, BOLD, RESET).ok();
+            writeln!(output, "{}{}No vulnerabilities found{}", GREEN, BOLD, RESET)?;
         } else {
-            writeln!(output, "No vulnerabilities found").ok();
+            writeln!(output, "No vulnerabilities found")?;
         }
     }
 
@@ -145,32 +143,38 @@ pub fn print_text(
         }
         let msg = format!("Warnings: {}", warnings.join(", "));
         if use_color {
-            writeln!(output, "{}{}{}{}", YELLOW, BOLD, msg, RESET).ok();
+            writeln!(output, "{}{}{}{}", YELLOW, BOLD, msg, RESET)?;
         } else {
-            writeln!(output, "{}", msg).ok();
+            writeln!(output, "{}", msg)?;
         }
     }
 
     if fix && report.vulnerable() {
         if let Some(results) = fix_results {
-            print_fix_results(results, output, use_color);
+            print_fix_results(results, output, use_color)?;
         } else {
-            print_remediations(report, output, use_color);
+            print_remediations(report, output, use_color)?;
         }
     }
+
+    Ok(())
 }
 
 /// Print fix results (resolved versions or unresolvable).
-fn print_fix_results(results: &[FixResult], output: &mut dyn Write, use_color: bool) {
+fn print_fix_results(
+    results: &[FixResult],
+    output: &mut dyn Write,
+    use_color: bool,
+) -> io::Result<()> {
     if results.is_empty() {
-        return;
+        return Ok(());
     }
 
-    writeln!(output).ok();
+    writeln!(output)?;
     if use_color {
-        writeln!(output, "{}{}Fixes:{}", BOLD, CYAN, RESET).ok();
+        writeln!(output, "{}{}Fixes:{}", BOLD, CYAN, RESET)?;
     } else {
-        writeln!(output, "Fixes:").ok();
+        writeln!(output, "Fixes:")?;
     }
 
     for result in results {
@@ -181,15 +185,13 @@ fn print_fix_results(results: &[FixResult], output: &mut dyn Write, use_color: b
                         output,
                         "  {}{}{} ({} -> {}{}{})",
                         BOLD, f.name, RESET, f.current_version, GREEN, f.resolved_version, RESET
-                    )
-                    .ok();
+                    )?;
                 } else {
                     writeln!(
                         output,
                         "  {} ({} -> {})",
                         f.name, f.current_version, f.resolved_version
-                    )
-                    .ok();
+                    )?;
                 }
             }
             FixResult::Unresolvable {
@@ -202,33 +204,37 @@ fn print_fix_results(results: &[FixResult], output: &mut dyn Write, use_color: b
                         output,
                         "  {}{}{} ({} -> {}{}no safe version found{})",
                         BOLD, name, RESET, current_version, RED, BOLD, RESET
-                    )
-                    .ok();
+                    )?;
                 } else {
                     writeln!(
                         output,
                         "  {} ({} -> no safe version found)",
                         name, current_version
-                    )
-                    .ok();
+                    )?;
                 }
             }
         }
     }
+
+    Ok(())
 }
 
 /// Print grouped remediation suggestions after the main report.
-pub fn print_remediations(report: &Report, output: &mut dyn Write, use_color: bool) {
+pub fn print_remediations(
+    report: &Report,
+    output: &mut dyn Write,
+    use_color: bool,
+) -> io::Result<()> {
     let remediations = report.remediations();
     if remediations.is_empty() {
-        return;
+        return Ok(());
     }
 
-    writeln!(output).ok();
+    writeln!(output)?;
     if use_color {
-        writeln!(output, "{}{}Remediation:{}", BOLD, CYAN, RESET).ok();
+        writeln!(output, "{}{}Remediation:{}", BOLD, CYAN, RESET)?;
     } else {
-        writeln!(output, "Remediation:").ok();
+        writeln!(output, "Remediation:")?;
     }
 
     for remediation in &remediations {
@@ -244,7 +250,7 @@ pub fn print_remediations(report: &Report, output: &mut dyn Write, use_color: bo
             }
         }
 
-        writeln!(output).ok();
+        writeln!(output)?;
 
         // Gem name with version and upgrade suggestion
         if all_patched.is_empty() {
@@ -253,15 +259,13 @@ pub fn print_remediations(report: &Report, output: &mut dyn Write, use_color: bo
                     output,
                     "  {}{}{} ({} -> {}{}no patch available{})",
                     BOLD, remediation.name, RESET, remediation.version, RED, BOLD, RESET
-                )
-                .ok();
+                )?;
             } else {
                 writeln!(
                     output,
                     "  {} ({} -> no patch available)",
                     remediation.name, remediation.version
-                )
-                .ok();
+                )?;
             }
         } else {
             let versions_str = all_patched.join(", ");
@@ -270,15 +274,13 @@ pub fn print_remediations(report: &Report, output: &mut dyn Write, use_color: bo
                     output,
                     "  {}{}{} ({} -> upgrade to {})",
                     BOLD, remediation.name, RESET, remediation.version, versions_str
-                )
-                .ok();
+                )?;
             } else {
                 writeln!(
                     output,
                     "  {} ({} -> upgrade to {})",
                     remediation.name, remediation.version, versions_str
-                )
-                .ok();
+                )?;
             }
         }
 
@@ -289,9 +291,9 @@ pub fn print_remediations(report: &Report, output: &mut dyn Write, use_color: bo
             .map(|a| a.id.clone())
             .collect();
         if use_color {
-            writeln!(output, "    - {}{}{}", DIM, ids.join(", "), RESET).ok();
+            writeln!(output, "    - {}{}{}", DIM, ids.join(", "), RESET)?;
         } else {
-            writeln!(output, "    - {}", ids.join(", ")).ok();
+            writeln!(output, "    - {}", ids.join(", "))?;
         }
 
         // Bundle update command
@@ -300,12 +302,13 @@ pub fn print_remediations(report: &Report, output: &mut dyn Write, use_color: bo
                 output,
                 "    {}$ bundle update {}{}",
                 DIM, remediation.name, RESET
-            )
-            .ok();
+            )?;
         } else {
-            writeln!(output, "    $ bundle update {}", remediation.name).ok();
+            writeln!(output, "    $ bundle update {}", remediation.name)?;
         }
     }
+
+    Ok(())
 }
 
 fn print_advisory(
@@ -313,18 +316,18 @@ fn print_advisory(
     vuln: &crate::scanner::UnpatchedGem,
     verbose: bool,
     use_color: bool,
-) {
+) -> io::Result<()> {
     let adv = &vuln.advisory;
 
-    label_value(output, "Name", &vuln.name, use_color);
-    label_value(output, "Version", &vuln.version, use_color);
+    label_value(output, "Name", &vuln.name, use_color)?;
+    label_value(output, "Version", &vuln.version, use_color)?;
 
     if let Some(cve_id) = adv.cve_id() {
-        label_value(output, "CVE", &cve_id, use_color);
+        label_value(output, "CVE", &cve_id, use_color)?;
     }
 
     if let Some(ghsa_id) = adv.ghsa_id() {
-        label_value(output, "GHSA", &ghsa_id, use_color);
+        label_value(output, "GHSA", &ghsa_id, use_color)?;
     }
 
     // Criticality
@@ -352,8 +355,7 @@ fn print_advisory(
             RESET,
             colored_value,
             width = LABEL_WIDTH
-        )
-        .ok();
+        )?;
     } else {
         writeln!(
             output,
@@ -361,12 +363,11 @@ fn print_advisory(
             "Criticality",
             crit_str,
             width = LABEL_WIDTH
-        )
-        .ok();
+        )?;
     }
 
     if let Some(url) = &adv.url {
-        label_value(output, "URL", url, use_color);
+        label_value(output, "URL", url, use_color)?;
     }
 
     if verbose {
@@ -379,17 +380,16 @@ fn print_advisory(
                     "Description",
                     RESET,
                     width = LABEL_WIDTH
-                )
-                .ok();
+                )?;
             } else {
-                writeln!(output, "{:>width$}:", "Description", width = LABEL_WIDTH).ok();
+                writeln!(output, "{:>width$}:", "Description", width = LABEL_WIDTH)?;
             }
             for line in desc.lines() {
-                writeln!(output, "{:>width$}  {}", "", line, width = LABEL_WIDTH).ok();
+                writeln!(output, "{:>width$}  {}", "", line, width = LABEL_WIDTH)?;
             }
         }
     } else if let Some(title) = &adv.title {
-        label_value(output, "Title", title, use_color);
+        label_value(output, "Title", title, use_color)?;
     }
 
     // Solution
@@ -408,8 +408,7 @@ fn print_advisory(
                 RESET,
                 versions.join(", "),
                 width = LABEL_WIDTH
-            )
-            .ok();
+            )?;
         } else {
             writeln!(
                 output,
@@ -417,8 +416,7 @@ fn print_advisory(
                 "Solution",
                 versions.join(", "),
                 width = LABEL_WIDTH
-            )
-            .ok();
+            )?;
         }
     } else if use_color {
         writeln!(
@@ -431,19 +429,19 @@ fn print_advisory(
             BOLD,
             RESET,
             width = LABEL_WIDTH
-        )
-        .ok();
+        )?;
     } else {
         writeln!(
             output,
             "{:>width$}: remove or disable this gem until a patch is available!",
             "Solution",
             width = LABEL_WIDTH
-        )
-        .ok();
+        )?;
     }
 
-    writeln!(output).ok();
+    writeln!(output)?;
+
+    Ok(())
 }
 
 fn print_ruby_advisory(
@@ -451,18 +449,18 @@ fn print_ruby_advisory(
     vuln: &crate::scanner::VulnerableRuby,
     verbose: bool,
     use_color: bool,
-) {
+) -> io::Result<()> {
     let adv = &vuln.advisory;
 
-    label_value(output, "Engine", &vuln.engine, use_color);
-    label_value(output, "Version", &vuln.version, use_color);
+    label_value(output, "Engine", &vuln.engine, use_color)?;
+    label_value(output, "Version", &vuln.version, use_color)?;
 
     if let Some(cve_id) = adv.cve_id() {
-        label_value(output, "CVE", &cve_id, use_color);
+        label_value(output, "CVE", &cve_id, use_color)?;
     }
 
     if let Some(ghsa_id) = adv.ghsa_id() {
-        label_value(output, "GHSA", &ghsa_id, use_color);
+        label_value(output, "GHSA", &ghsa_id, use_color)?;
     }
 
     // Criticality
@@ -490,8 +488,7 @@ fn print_ruby_advisory(
             RESET,
             colored_value,
             width = LABEL_WIDTH
-        )
-        .ok();
+        )?;
     } else {
         writeln!(
             output,
@@ -499,12 +496,11 @@ fn print_ruby_advisory(
             "Criticality",
             crit_str,
             width = LABEL_WIDTH
-        )
-        .ok();
+        )?;
     }
 
     if let Some(url) = &adv.url {
-        label_value(output, "URL", url, use_color);
+        label_value(output, "URL", url, use_color)?;
     }
 
     if verbose {
@@ -517,17 +513,16 @@ fn print_ruby_advisory(
                     "Description",
                     RESET,
                     width = LABEL_WIDTH
-                )
-                .ok();
+                )?;
             } else {
-                writeln!(output, "{:>width$}:", "Description", width = LABEL_WIDTH).ok();
+                writeln!(output, "{:>width$}:", "Description", width = LABEL_WIDTH)?;
             }
             for line in desc.lines() {
-                writeln!(output, "{:>width$}  {}", "", line, width = LABEL_WIDTH).ok();
+                writeln!(output, "{:>width$}  {}", "", line, width = LABEL_WIDTH)?;
             }
         }
     } else if let Some(title) = &adv.title {
-        label_value(output, "Title", title, use_color);
+        label_value(output, "Title", title, use_color)?;
     }
 
     // Solution
@@ -546,8 +541,7 @@ fn print_ruby_advisory(
                 RESET,
                 versions.join(", "),
                 width = LABEL_WIDTH
-            )
-            .ok();
+            )?;
         } else {
             writeln!(
                 output,
@@ -555,8 +549,7 @@ fn print_ruby_advisory(
                 "Solution",
                 versions.join(", "),
                 width = LABEL_WIDTH
-            )
-            .ok();
+            )?;
         }
     } else if use_color {
         writeln!(
@@ -569,22 +562,27 @@ fn print_ruby_advisory(
             BOLD,
             RESET,
             width = LABEL_WIDTH
-        )
-        .ok();
+        )?;
     } else {
         writeln!(
             output,
             "{:>width$}: upgrade Ruby to a patched version!",
             "Solution",
             width = LABEL_WIDTH
-        )
-        .ok();
+        )?;
     }
 
-    writeln!(output).ok();
+    writeln!(output)?;
+
+    Ok(())
 }
 
-fn label_value(output: &mut dyn Write, label: &str, value: &str, use_color: bool) {
+fn label_value(
+    output: &mut dyn Write,
+    label: &str,
+    value: &str,
+    use_color: bool,
+) -> io::Result<()> {
     if use_color {
         writeln!(
             output,
@@ -594,11 +592,12 @@ fn label_value(output: &mut dyn Write, label: &str, value: &str, use_color: bool
             RESET,
             value,
             width = LABEL_WIDTH
-        )
-        .ok();
+        )?;
     } else {
-        writeln!(output, "{:>width$}: {}", label, value, width = LABEL_WIDTH).ok();
+        writeln!(output, "{:>width$}: {}", label, value, width = LABEL_WIDTH)?;
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -646,7 +645,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("No vulnerabilities found"));
     }
@@ -661,7 +660,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, true, false, false, None);
+        print_text(&report, &mut buf, false, true, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(!output.contains("No vulnerabilities found"));
     }
@@ -670,7 +669,7 @@ mod tests {
     fn text_output_insecure_source() {
         let report = make_report_with_insecure_source();
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Insecure Source URI found: http://rubygems.org/"));
         assert!(output.contains("Vulnerabilities found!"));
@@ -680,7 +679,7 @@ mod tests {
     fn text_output_unpatched_gem() {
         let report = make_report_with_vuln();
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Name"));
         assert!(output.contains("test"));
@@ -708,7 +707,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, true, false, false, false, None);
+        print_text(&report, &mut buf, true, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Description"));
         assert!(output.contains("Detailed description here."));
@@ -719,7 +718,7 @@ mod tests {
     fn text_output_no_color() {
         let report = make_report_with_vuln();
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(!output.contains("\x1b["));
     }
@@ -728,7 +727,7 @@ mod tests {
     fn text_output_fix_shows_remediation() {
         let report = make_report_with_vuln();
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, true, None);
+        print_text(&report, &mut buf, false, false, false, true, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Remediation:"));
         assert!(output.contains("test (0.5.0 -> upgrade to '>= 1.0.0')"));
@@ -746,7 +745,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, true, None);
+        print_text(&report, &mut buf, false, false, false, true, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(!output.contains("Remediation:"));
     }
@@ -780,7 +779,7 @@ mod tests {
     fn text_output_fix_groups_multiple_advisories() {
         let report = make_report_with_multiple_vulns();
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, true, None);
+        print_text(&report, &mut buf, false, false, false, true, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Remediation:"));
         // Should show both patched versions
@@ -798,7 +797,7 @@ mod tests {
     fn text_output_without_fix_no_remediation() {
         let report = make_report_with_vuln();
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(!output.contains("Remediation:"));
         assert!(!output.contains("$ bundle update"));
@@ -810,7 +809,7 @@ mod tests {
     fn text_output_color_insecure_source() {
         let report = make_report_with_insecure_source();
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("\x1b["));
         assert!(output.contains("Insecure Source URI found:"));
@@ -820,7 +819,7 @@ mod tests {
     fn text_output_color_vulnerability() {
         let report = make_report_with_vuln();
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("\x1b["));
         // Red+bold for "Vulnerabilities found!"
@@ -837,7 +836,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         // Green+bold for "No vulnerabilities found"
         assert!(output.contains(&format!("{}{}No vulnerabilities found", GREEN, BOLD)));
@@ -859,7 +858,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         // Medium criticality should be yellow
         assert!(output.contains(&format!("{}Medium{}", YELLOW, RESET)));
@@ -881,7 +880,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         // High criticality should be red+bold
         assert!(output.contains(&format!("{}{}High{}", RED, BOLD, RESET)));
@@ -903,7 +902,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         // Low criticality should be plain (no extra color beyond the cyan label)
         assert!(output.contains("Low"));
@@ -921,7 +920,7 @@ mod tests {
             advisory_load_errors: 2,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("3 version parse errors"));
         assert!(output.contains("2 advisory load errors"));
@@ -937,7 +936,7 @@ mod tests {
             advisory_load_errors: 1,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("1 version parse error"));
         assert!(!output.contains("1 version parse errors"));
@@ -955,7 +954,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("\x1b["));
         assert!(output.contains("1 version parse error"));
@@ -979,7 +978,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("remove or disable this gem until a patch is available!"));
     }
@@ -1000,7 +999,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("remove or disable this gem"));
         assert!(output.contains("\x1b["));
@@ -1022,7 +1021,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, true, None);
+        print_text(&report, &mut buf, false, false, false, true, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("no patch available"));
     }
@@ -1052,7 +1051,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("2 insecure sources"));
         assert!(output.contains("1 unpatched gem"));
@@ -1066,7 +1065,7 @@ mod tests {
     fn text_output_separator_between_multiple_gems() {
         let report = make_report_with_multiple_vulns();
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         // Should have separator between vulns
         assert!(output.contains("─".repeat(40).as_str()));
@@ -1076,7 +1075,7 @@ mod tests {
     fn text_output_separator_with_color() {
         let report = make_report_with_multiple_vulns();
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains(DIM));
         assert!(output.contains("─".repeat(40).as_str()));
@@ -1107,7 +1106,7 @@ mod tests {
     fn text_output_ruby_vulnerability_plain() {
         let report = make_report_with_ruby_vuln();
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Engine: ruby"));
         assert!(output.contains("Version: 2.6.0"));
@@ -1125,7 +1124,7 @@ mod tests {
     fn text_output_ruby_vulnerability_color() {
         let report = make_report_with_ruby_vuln();
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("\x1b["));
         assert!(output.contains("Engine"));
@@ -1152,7 +1151,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, true, false, false, false, None);
+        print_text(&report, &mut buf, true, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Description"));
         assert!(output.contains("Detailed ruby vulnerability description."));
@@ -1176,7 +1175,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, true, false, true, false, None);
+        print_text(&report, &mut buf, true, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("\x1b["));
         assert!(output.contains("Description"));
@@ -1200,7 +1199,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("upgrade Ruby to a patched version!"));
         assert!(!output.contains("\x1b["));
@@ -1223,7 +1222,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("upgrade Ruby to a patched version!"));
         assert!(output.contains("\x1b["));
@@ -1246,7 +1245,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains(&format!("{}{}High{}", RED, BOLD, RESET)));
     }
@@ -1268,7 +1267,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains(&format!("{}{}Critical{}", RED, BOLD, RESET)));
     }
@@ -1294,7 +1293,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         // Should contain both gem and ruby info
         assert!(output.contains("Name: test"));
@@ -1327,7 +1326,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains(DIM));
         assert!(output.contains("─".repeat(40).as_str()));
@@ -1360,7 +1359,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("2 vulnerable Ruby versions"));
         // Separator between the two ruby vulns
@@ -1394,7 +1393,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains(DIM));
         assert!(output.contains("─".repeat(40).as_str()));
@@ -1416,7 +1415,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Insecure Source URI found: http://rubygems.org/"));
         assert!(output.contains("Engine: ruby"));
@@ -1440,7 +1439,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, false, None);
+        print_text(&report, &mut buf, false, false, true, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("\x1b["));
         assert!(output.contains("Insecure Source URI found:"));
@@ -1464,7 +1463,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, false, false, None);
+        print_text(&report, &mut buf, false, false, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Engine: ruby"));
         assert!(!output.contains("GHSA"));
@@ -1477,7 +1476,7 @@ mod tests {
     fn text_output_color_remediation() {
         let report = make_report_with_vuln();
         let mut buf = Vec::new();
-        print_text(&report, &mut buf, false, false, true, true, None);
+        print_text(&report, &mut buf, false, false, true, true, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Remediation:"));
         assert!(output.contains("\x1b["));

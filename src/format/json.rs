@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{self, Write};
 
 use serde_json::{Value, json};
 
@@ -28,7 +28,7 @@ pub fn print_json(
     pretty: bool,
     fix: bool,
     fix_results: Option<&[FixResult]>,
-) {
+) -> io::Result<()> {
     let results: Vec<Value> = report
         .insecure_sources
         .iter()
@@ -128,12 +128,13 @@ pub fn print_json(
     }
 
     if pretty {
-        serde_json::to_writer_pretty(&mut *output, &doc).ok();
-        writeln!(output).ok();
+        serde_json::to_writer_pretty(&mut *output, &doc).map_err(io::Error::other)?;
+        writeln!(output)?;
     } else {
-        serde_json::to_writer(&mut *output, &doc).ok();
-        writeln!(output).ok();
+        serde_json::to_writer(&mut *output, &doc).map_err(io::Error::other)?;
+        writeln!(output)?;
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -153,7 +154,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, false, false, None);
+        print_json(&report, &mut buf, false, false, None).unwrap();
         let output = String::from_utf8(buf).unwrap();
         let parsed: Value = serde_json::from_str(&output).unwrap();
         assert_eq!(parsed["results"].as_array().unwrap().len(), 0);
@@ -172,7 +173,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, false, false, None);
+        print_json(&report, &mut buf, false, false, None).unwrap();
         let parsed: Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         let results = parsed["results"].as_array().unwrap();
         assert_eq!(results.len(), 1);
@@ -196,7 +197,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, true, false, None);
+        print_json(&report, &mut buf, true, false, None).unwrap();
         let parsed: Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         let results = parsed["results"].as_array().unwrap();
         assert_eq!(results.len(), 1);
@@ -218,11 +219,11 @@ mod tests {
         };
 
         let mut pretty_buf = Vec::new();
-        print_json(&report, &mut pretty_buf, true, false, None);
+        print_json(&report, &mut pretty_buf, true, false, None).unwrap();
         let pretty = String::from_utf8(pretty_buf).unwrap();
 
         let mut compact_buf = Vec::new();
-        print_json(&report, &mut compact_buf, false, false, None);
+        print_json(&report, &mut compact_buf, false, false, None).unwrap();
         let compact = String::from_utf8(compact_buf).unwrap();
 
         // Pretty should have indentation, compact should not
@@ -246,7 +247,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, false, true, None);
+        print_json(&report, &mut buf, false, true, None).unwrap();
         let parsed: Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         let remediations = parsed["remediations"].as_array().unwrap();
         assert_eq!(remediations.len(), 1);
@@ -277,7 +278,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, false, false, None);
+        print_json(&report, &mut buf, false, false, None).unwrap();
         let parsed: Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         assert!(parsed.get("remediations").is_none());
     }
@@ -294,7 +295,7 @@ mod tests {
             advisory_load_errors: 3,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, false, false, None);
+        print_json(&report, &mut buf, false, false, None).unwrap();
         let parsed: Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         assert_eq!(parsed["metadata"]["version_parse_errors"], 5);
         assert_eq!(parsed["metadata"]["advisory_load_errors"], 3);
@@ -320,7 +321,7 @@ mod tests {
             advisory_load_errors: 0,
         };
         let mut buf = Vec::new();
-        print_json(&report, &mut buf, false, false, None);
+        print_json(&report, &mut buf, false, false, None).unwrap();
         let parsed: Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         let results = parsed["results"].as_array().unwrap();
         assert_eq!(results.len(), 2);
