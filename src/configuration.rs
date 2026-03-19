@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use thiserror::Error;
 
@@ -9,6 +9,8 @@ pub struct Configuration {
     pub ignore: HashSet<String>,
     /// Maximum database age in days before warning.
     pub max_db_age_days: Option<u64>,
+    /// Inline comments parsed from the YAML file (advisory ID → comment text).
+    pub ignore_comments: HashMap<String, String>,
 }
 
 /// Errors that can occur when loading a configuration file.
@@ -115,8 +117,24 @@ impl Configuration {
         })
     }
 
+    /// Extract inline `# comments` from YAML ignore entries.
+    ///
+    /// Matches lines in the format produced by [`save()`]: `  - ID  # comment`.
+    fn parse_ignore_comments(yaml: &str) -> HashMap<String, String> {
+        yaml.lines()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                let entry = trimmed.strip_prefix("- ")?;
+                let (id, comment) = entry.split_once("  # ")?;
+                Some((id.trim().to_string(), comment.to_string()))
+            })
+            .collect()
+    }
+
     /// Parse configuration from a YAML string.
     pub fn from_yaml(yaml: &str) -> Result<Self, ConfigError> {
+        let ignore_comments = Self::parse_ignore_comments(yaml);
+
         let value: serde_yml::Value =
             serde_yml::from_str(yaml).map_err(|e| ConfigError::InvalidYaml(e.to_string()))?;
 
@@ -163,6 +181,7 @@ impl Configuration {
         Ok(Configuration {
             ignore,
             max_db_age_days,
+            ignore_comments,
         })
     }
 }
@@ -290,6 +309,7 @@ mod tests {
         let config = Configuration {
             ignore,
             max_db_age_days: Some(7),
+            ..Configuration::default()
         };
         config.save(&path, None).unwrap();
 
@@ -326,6 +346,7 @@ mod tests {
         let config = Configuration {
             ignore,
             max_db_age_days: None,
+            ..Configuration::default()
         };
         config.save(&path, None).unwrap();
 
@@ -349,6 +370,7 @@ mod tests {
         let config = Configuration {
             ignore,
             max_db_age_days: None,
+            ..Configuration::default()
         };
 
         let mut comments = std::collections::HashMap::new();
@@ -435,5 +457,87 @@ mod tests {
             }
             other => panic!("expected InvalidConfiguration, got: {:?}", other),
         }
+    }
+
+    // ========== Comment Parsing ==========
+
+    #[test]
+    fn parse_ignore_comments_extracts_comments() {
+        let yaml = "---\nignore:\n  - CVE-2020-1234  # gem 1.0 (Critical) - Title\n  - GHSA-aaaa-bbbb-cccc  # rack 2.0 (Medium) - Other\n";
+        let comments = Configuration::parse_ignore_comments(yaml);
+        assert_eq!(comments.len(), 2);
+        assert_eq!(
+            comments.get("CVE-2020-1234").unwrap(),
+            "gem 1.0 (Critical) - Title"
+        );
+        assert_eq!(
+            comments.get("GHSA-aaaa-bbbb-cccc").unwrap(),
+            "rack 2.0 (Medium) - Other"
+        );
+    }
+
+    #[test]
+    fn parse_ignore_comments_skips_uncommented_entries() {
+        let yaml = "---\nignore:\n  - CVE-2020-1234\n  - GHSA-aaaa-bbbb-cccc  # has comment\n";
+        let comments = Configuration::parse_ignore_comments(yaml);
+        assert_eq!(comments.len(), 1);
+        assert!(comments.contains_key("GHSA-aaaa-bbbb-cccc"));
+        assert!(!comments.contains_key("CVE-2020-1234"));
+    }
+
+    #[test]
+    fn parse_ignore_comments_empty_yaml() {
+        let comments = Configuration::parse_ignore_comments("---\nignore: []\n");
+        assert!(comments.is_empty());
+    }
+
+    #[test]
+    fn from_yaml_preserves_comments() {
+        let yaml = "---\nignore:\n  - CVE-2020-1234  # gem 1.0 (Critical) - Title\n  - GHSA-aaaa-bbbb-cccc\n";
+        let config = Configuration::from_yaml(yaml).unwrap();
+        assert_eq!(config.ignore.len(), 2);
+        assert_eq!(config.ignore_comments.len(), 1);
+        assert_eq!(
+            config.ignore_comments.get("CVE-2020-1234").unwrap(),
+            "gem 1.0 (Critical) - Title"
+        );
+    }
+
+    #[test]
+    fn save_and_reload_preserves_comments() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".gem-audit.yml");
+
+        let mut ignore = HashSet::new();
+        ignore.insert("CVE-2020-1234".to_string());
+        ignore.insert("GHSA-aaaa-bbbb-cccc".to_string());
+
+        let mut comments = HashMap::new();
+        comments.insert(
+            "CVE-2020-1234".to_string(),
+            "gem 1.0 (Critical) - Title".to_string(),
+        );
+        comments.insert(
+            "GHSA-aaaa-bbbb-cccc".to_string(),
+            "rack 2.0 (Medium) - Other".to_string(),
+        );
+
+        let config = Configuration {
+            ignore,
+            max_db_age_days: None,
+            ..Configuration::default()
+        };
+        config.save(&path, Some(&comments)).unwrap();
+
+        let reloaded = Configuration::load(&path).unwrap();
+        assert_eq!(reloaded.ignore_comments.len(), 2);
+        assert_eq!(
+            reloaded.ignore_comments.get("CVE-2020-1234").unwrap(),
+            "gem 1.0 (Critical) - Title"
+        );
+        assert_eq!(
+            reloaded.ignore_comments.get("GHSA-aaaa-bbbb-cccc").unwrap(),
+            "rack 2.0 (Medium) - Other"
+        );
     }
 }

@@ -1,3 +1,17 @@
+### 2.8.1 / 2026-03-19
+
+#### Fixed
+
+* **`--write-ignore` now preserves existing inline comments.** Previously,
+  running `--write-ignore` a second time would strip `# comments` from
+  already-ignored advisory entries because the YAML parser discards comments
+  and the scanner skips already-ignored advisories (so `build_ignore_comments`
+  could not regenerate them). The configuration loader now extracts inline
+  comments from the raw YAML text before parsing and merges them with newly
+  generated comments on save, with new comments taking precedence.
+
+---
+
 ### 2.4.0 / 2026-03-11
 
 #### Fixed
