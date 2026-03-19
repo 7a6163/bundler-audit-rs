@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process;
@@ -285,15 +285,21 @@ fn write_ignore_list(
     config: &Configuration,
     config_path: &Path,
 ) -> i32 {
-    let (new_ids, comments) = check::build_ignore_comments(report);
+    let (new_ids, new_comments) = check::build_ignore_comments(report);
     let merged_ignore: HashSet<String> = config.ignore.union(&new_ids).cloned().collect();
+
+    let mut merged_comments = config.ignore_comments.clone();
+    for (id, comment) in new_comments {
+        merged_comments.insert(id, comment);
+    }
 
     let updated_config = Configuration {
         ignore: merged_ignore,
         max_db_age_days: config.max_db_age_days,
+        ignore_comments: HashMap::new(),
     };
 
-    match updated_config.save(config_path, Some(&comments)) {
+    match updated_config.save(config_path, Some(&merged_comments)) {
         Ok(()) => {
             let count = updated_config.ignore.len() - config.ignore.len();
             eprintln!(
