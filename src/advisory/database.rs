@@ -109,12 +109,31 @@ impl Database {
         Ok(())
     }
 
-    /// Checkout the current HEAD into the working tree.
+    /// Fast-forward HEAD to the remote tracking branch, then checkout the working tree.
     fn checkout_head(&self) -> Result<bool, DatabaseError> {
         let repo = gix::open(&self.path).map_err(|e| DatabaseError::Git(e.to_string()))?;
-        let tree = repo
+
+        // Find the remote tracking branch (e.g. origin/main) and fast-forward HEAD to it.
+        let remote_commit = self.find_remote_head(&repo)?;
+        let head_commit = repo
             .head_commit()
-            .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?
+            .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?;
+
+        if remote_commit.id != head_commit.id {
+            // Update HEAD (and the branch it points to) to the remote commit.
+            repo.reference(
+                repo.head_name()
+                    .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?
+                    .ok_or_else(|| DatabaseError::UpdateFailed("detached HEAD".to_string()))?
+                    .as_ref(),
+                remote_commit.id,
+                gix::refs::transaction::PreviousValue::MustExist,
+                "gem-audit update",
+            )
+            .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?;
+        }
+
+        let tree = remote_commit
             .tree()
             .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?;
 
@@ -143,6 +162,35 @@ impl Database {
         .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?;
 
         Ok(true)
+    }
+
+    /// Resolve the remote tracking commit (e.g. `origin/main`) to fast-forward to.
+    ///
+    /// If neither `origin/main` nor `origin/master` is found, returns `Err`;
+    /// the caller (`update`) will then fall back to a fresh clone via `reclone`.
+    fn find_remote_head<'a>(
+        &self,
+        repo: &'a gix::Repository,
+    ) -> Result<gix::Commit<'a>, DatabaseError> {
+        // Try well-known remote tracking refs in order of likelihood.
+        let candidates = ["refs/remotes/origin/main", "refs/remotes/origin/master"];
+
+        for refname in &candidates {
+            if let Ok(reference) = repo.find_reference(*refname) {
+                let commit = reference
+                    .into_fully_peeled_id()
+                    .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?
+                    .object()
+                    .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?
+                    .try_into_commit()
+                    .map_err(|e| DatabaseError::UpdateFailed(e.to_string()))?;
+                return Ok(commit);
+            }
+        }
+
+        Err(DatabaseError::UpdateFailed(
+            "no remote tracking branch found (tried origin/main, origin/master)".to_string(),
+        ))
     }
 
     /// Delete the existing DB and re-clone from scratch.
@@ -249,6 +297,10 @@ impl Database {
         let mut results = Vec::new();
         let gem_dir = self.path.join("gems").join(gem_name);
 
+        if !is_contained_in(&gem_dir, &self.path) {
+            return (results, 0);
+        }
+
         let errors = if gem_dir.is_dir() {
             self.load_advisories_from_dir(&gem_dir, &mut results)
         } else {
@@ -280,6 +332,10 @@ impl Database {
     fn advisories_for_ruby_with_errors(&self, engine: &str) -> (Vec<Advisory>, usize) {
         let mut results = Vec::new();
         let engine_dir = self.path.join("rubies").join(engine);
+
+        if !is_contained_in(&engine_dir, &self.path) {
+            return (results, 0);
+        }
 
         let errors = if engine_dir.is_dir() {
             self.load_advisories_from_dir(&engine_dir, &mut results)
@@ -364,6 +420,27 @@ impl fmt::Display for Database {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.path.display())
     }
+}
+
+/// Check that `child` is logically contained within `parent` after normalising
+/// `..` components.  This prevents path traversal via crafted gem/engine names.
+fn is_contained_in(child: &Path, parent: &Path) -> bool {
+    use std::path::Component;
+
+    let mut depth: usize = 0;
+    for component in child.strip_prefix(parent).unwrap_or(child).components() {
+        match component {
+            Component::ParentDir => {
+                if depth == 0 {
+                    return false;
+                }
+                depth -= 1;
+            }
+            Component::Normal(_) => depth += 1,
+            _ => {}
+        }
+    }
+    true
 }
 
 /// Fallback for getting the default database path when the `dirs` crate is not available.
@@ -464,7 +541,7 @@ mod tests {
 
     #[test]
     fn open_fixture_advisory_dir() {
-        let (tmp, _) = temp_mock_db("fixture");
+        let (tmp, _) = temp_mock_db();
 
         let db = Database::open(tmp.path()).unwrap();
         assert!(!db.is_git());
@@ -503,7 +580,7 @@ mod tests {
 
     // Helper: create an isolated temporary mock DB for tests that don't
     // share state with `mock_database()` in scanner tests.
-    fn temp_mock_db(_suffix: &str) -> (tempfile::TempDir, PathBuf) {
+    fn temp_mock_db() -> (tempfile::TempDir, PathBuf) {
         let fixture_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
         let tmp = tempfile::tempdir().unwrap();
         let gem_dir = tmp.path().join("gems").join("test");
@@ -520,7 +597,7 @@ mod tests {
 
     #[test]
     fn database_display() {
-        let (tmp, _) = temp_mock_db("display");
+        let (tmp, _) = temp_mock_db();
         let db = Database::open(tmp.path()).unwrap();
         let display = db.to_string();
         assert_eq!(display, tmp.path().to_string_lossy());
@@ -530,7 +607,7 @@ mod tests {
 
     #[test]
     fn database_exists_with_gems() {
-        let (tmp, _) = temp_mock_db("exists");
+        let (tmp, _) = temp_mock_db();
         let db = Database::open(tmp.path()).unwrap();
         assert!(db.exists());
         assert!(db.path() == tmp.path());
@@ -540,7 +617,7 @@ mod tests {
 
     #[test]
     fn database_advisories_with_mock() {
-        let (tmp, _) = temp_mock_db("advisories");
+        let (tmp, _) = temp_mock_db();
         let db = Database::open(tmp.path()).unwrap();
         let all = db.advisories();
         assert_eq!(all.len(), 1);
@@ -549,7 +626,7 @@ mod tests {
 
     #[test]
     fn database_size_with_mock() {
-        let (tmp, _) = temp_mock_db("size");
+        let (tmp, _) = temp_mock_db();
         let db = Database::open(tmp.path()).unwrap();
         assert_eq!(db.size(), 1);
     }
@@ -606,7 +683,7 @@ mod tests {
 
     #[test]
     fn commit_id_none_for_non_git() {
-        let (tmp, _) = temp_mock_db("nongit");
+        let (tmp, _) = temp_mock_db();
         let db = Database::open(tmp.path()).unwrap();
         assert_eq!(db.commit_id(), None);
         assert_eq!(db.last_updated_at(), None);
@@ -638,5 +715,40 @@ mod tests {
     fn database_error_git_display() {
         let err = DatabaseError::Git("corrupt repo".to_string());
         assert!(err.to_string().contains("git error"));
+    }
+
+    // ========== Path traversal guard ==========
+
+    #[test]
+    fn is_contained_in_normal_path() {
+        let parent = Path::new("/db");
+        assert!(is_contained_in(&parent.join("gems").join("rails"), parent));
+    }
+
+    #[test]
+    fn is_contained_in_rejects_traversal() {
+        let parent = Path::new("/db");
+        assert!(!is_contained_in(
+            &parent.join("gems").join("..").join("..").join("etc"),
+            parent
+        ));
+    }
+
+    #[test]
+    fn advisories_for_traversal_gem_returns_empty() {
+        let (tmp, _) = temp_mock_db();
+        let db = Database::open(tmp.path()).unwrap();
+        let (advisories, errors) = db.advisories_for_with_errors("../../etc");
+        assert!(advisories.is_empty());
+        assert_eq!(errors, 0);
+    }
+
+    #[test]
+    fn advisories_for_ruby_traversal_returns_empty() {
+        let (tmp, _) = temp_mock_db();
+        let db = Database::open(tmp.path()).unwrap();
+        let (advisories, errors) = db.advisories_for_ruby_with_errors("../../etc");
+        assert!(advisories.is_empty());
+        assert_eq!(errors, 0);
     }
 }

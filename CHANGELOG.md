@@ -1,3 +1,35 @@
+### 2.9.0 / 2026-03-30
+
+#### Fixed
+
+* **`update` now correctly fast-forwards the local branch to the remote.**
+  Previously, `gem-audit update` fetched remote refs but never advanced the
+  local branch (HEAD) to match `origin/main`, so the working tree stayed at
+  the old commit despite reporting "Updated". The advisory database would
+  remain stale until a full re-clone. `checkout_head` now resolves the
+  remote tracking ref and updates the local branch before checking out.
+
+#### Security
+
+* **Path traversal guard for gem and Ruby engine names.** A crafted
+  `Gemfile.lock` containing a gem name with `..` sequences (e.g.
+  `../../etc`) could cause the scanner to read YAML files outside the
+  advisory database directory. Added `is_contained_in()` validation to
+  `advisories_for_with_errors` and `advisories_for_ruby_with_errors`.
+
+#### Changed
+
+* Use `PreviousValue::MustExist` instead of `PreviousValue::Any` when
+  updating the local branch ref, catching corrupted repository state
+  earlier.
+
+#### Internal
+
+* Removed unused `_suffix` parameter from `temp_mock_db` test helper.
+* Added doc comments to `find_remote_head` describing fallback behaviour.
+
+---
+
 ### 2.8.1 / 2026-03-19
 
 #### Fixed
