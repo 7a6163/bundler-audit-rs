@@ -111,7 +111,7 @@ pub enum AdvisoryError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("YAML parse error: {0}")]
-    Yaml(#[from] serde_yml::Error),
+    Yaml(#[from] yaml_serde::Error),
     #[error("invalid requirement '{version_str}': {error}")]
     InvalidRequirement { version_str: String, error: String },
     #[error("advisory {path} is missing both 'gem' and 'engine' fields")]
@@ -133,7 +133,7 @@ impl Advisory {
             .unwrap_or("unknown")
             .to_string();
 
-        let raw: AdvisoryYaml = serde_yml::from_str(yaml)?;
+        let raw: AdvisoryYaml = yaml_serde::from_str(yaml)?;
 
         let (name, kind) = match (raw.gem, raw.engine) {
             (Some(gem), _) => (gem, AdvisoryKind::Gem),
@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn advisory_error_yaml_display() {
-        let yaml_err = serde_yml::from_str::<AdvisoryYaml>("not valid yaml {{{{").unwrap_err();
+        let yaml_err = yaml_serde::from_str::<AdvisoryYaml>("not valid yaml {{{{").unwrap_err();
         let err = AdvisoryError::Yaml(yaml_err);
         assert!(err.to_string().contains("YAML parse error"));
     }

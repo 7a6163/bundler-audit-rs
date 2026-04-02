@@ -107,19 +107,8 @@ enum Commands {
     /// Check the Gemfile.lock for insecure dependencies (default)
     Check(CheckOptions),
 
-    /// Update the ruby-advisory-db
+    /// Download or update the ruby-advisory-db
     Update {
-        /// Suppress output
-        #[arg(short, long)]
-        quiet: bool,
-
-        /// Path to the advisory database
-        #[arg(short = 'D', long)]
-        database: Option<String>,
-    },
-
-    /// Download the ruby-advisory-db
-    Download {
         /// Suppress output
         #[arg(short, long)]
         quiet: bool,
@@ -146,7 +135,6 @@ fn main() {
     let code = match cli.command {
         Some(Commands::Check(opts)) => cmd_check(opts),
         Some(Commands::Update { quiet, database }) => cmd_update(quiet, database.as_deref()),
-        Some(Commands::Download { quiet, database }) => cmd_download(quiet, database.as_deref()),
         Some(Commands::Stats { database }) => cmd_stats(database.as_deref()),
         Some(Commands::Version) => {
             println!("gem-audit {}", VERSION);
@@ -449,7 +437,22 @@ fn cmd_update(quiet: bool, database: Option<&str>) -> i32 {
     let db_path = resolve_db_path(database);
 
     if !db_path.is_dir() || !db_path.join("gems").is_dir() {
-        return cmd_download(quiet, database);
+        if !quiet {
+            eprintln!("Downloading ruby-advisory-db ...");
+        }
+        match Database::download(&db_path, quiet) {
+            Ok(db) => {
+                if !quiet {
+                    eprintln!("Downloaded ruby-advisory-db");
+                    print_stats(&db);
+                }
+                return EXIT_SUCCESS;
+            }
+            Err(e) => {
+                eprintln!("Failed to download: {}", e);
+                return EXIT_ERROR;
+            }
+        }
     }
 
     if !quiet {
@@ -486,32 +489,6 @@ fn cmd_update(quiet: bool, database: Option<&str>) -> i32 {
     }
 
     EXIT_SUCCESS
-}
-
-fn cmd_download(quiet: bool, database: Option<&str>) -> i32 {
-    let db_path = resolve_db_path(database);
-
-    if db_path.is_dir() && db_path.join("gems").is_dir() {
-        eprintln!("Database already exists");
-        return EXIT_SUCCESS;
-    }
-
-    if !quiet {
-        eprintln!("Downloading ruby-advisory-db ...");
-    }
-
-    match Database::download(&db_path, quiet) {
-        Ok(db) => {
-            if !quiet {
-                print_stats(&db);
-            }
-            EXIT_SUCCESS
-        }
-        Err(e) => {
-            eprintln!("Failed to download: {}", e);
-            EXIT_ERROR
-        }
-    }
 }
 
 fn cmd_stats(database: Option<&str>) -> i32 {

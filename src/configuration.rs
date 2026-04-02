@@ -135,8 +135,8 @@ impl Configuration {
     pub fn from_yaml(yaml: &str) -> Result<Self, ConfigError> {
         let ignore_comments = Self::parse_ignore_comments(yaml);
 
-        let value: serde_yml::Value =
-            serde_yml::from_str(yaml).map_err(|e| ConfigError::InvalidYaml(e.to_string()))?;
+        let value: yaml_serde::Value =
+            yaml_serde::from_str(yaml).map_err(|e| ConfigError::InvalidYaml(e.to_string()))?;
 
         // Must be a mapping (Hash)
         let mapping = match value.as_mapping() {
@@ -150,7 +150,7 @@ impl Configuration {
 
         let mut ignore = HashSet::new();
 
-        if let Some(ignore_val) = mapping.get(serde_yml::Value::String("ignore".to_string())) {
+        if let Some(ignore_val) = mapping.get(yaml_serde::Value::String("ignore".to_string())) {
             let arr = match ignore_val.as_sequence() {
                 Some(seq) => seq,
                 None => {
@@ -175,7 +175,7 @@ impl Configuration {
         }
 
         let max_db_age_days = mapping
-            .get(serde_yml::Value::String("max_db_age_days".to_string()))
+            .get(yaml_serde::Value::String("max_db_age_days".to_string()))
             .and_then(|v| v.as_u64());
 
         Ok(Configuration {

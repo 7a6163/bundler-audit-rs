@@ -1,3 +1,26 @@
+### 2.10.0 / 2026-04-02
+
+#### Changed
+
+* **Removed `download` subcommand.** The `update` subcommand now handles both
+  downloading (when no database exists) and updating (when one exists).
+  Previously `download` would refuse to run if the database already existed,
+  causing confusion. Now `gem-audit update` is the single command for all
+  database management.
+
+#### Security
+
+* **Replaced `serde_yml` with `yaml_serde`.** The `serde_yml` and `libyml`
+  crates were flagged as unsound and unmaintained (RUSTSEC-2025-0067,
+  RUSTSEC-2025-0068). Switched to `yaml_serde` 0.10, the YAML Organization's
+  maintained fork of `serde_yaml`.
+* **Updated `aws-lc-sys`** to 0.39.1 to resolve CRL distribution point
+  scope check vulnerability (RUSTSEC-2026-0048).
+* **Updated `rustls-webpki`** to 0.103.10 to resolve CRL authority matching
+  bug (RUSTSEC-2026-0049).
+
+---
+
 ### 2.9.0 / 2026-03-30
 
 #### Fixed

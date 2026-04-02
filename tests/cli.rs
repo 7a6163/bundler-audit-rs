@@ -321,18 +321,18 @@ fn stats_subcommand() {
         );
 }
 
-// ==================== download — already exists (real DB) ====================
+// ==================== update — existing DB ====================
 
 #[test]
-fn download_already_exists() {
+fn update_existing_db() {
     let Some(db) = real_db_path() else { return };
 
     Command::cargo_bin("gem-audit")
         .unwrap()
-        .args(["download", "--database", db.to_str().unwrap()])
+        .args(["update", "--database", db.to_str().unwrap()])
         .assert()
         .success()
-        .stderr(predicate::str::contains("Database already exists"));
+        .stderr(predicate::str::contains("ruby-advisory-db"));
 }
 
 // ==================== check — nonexistent directory ====================
